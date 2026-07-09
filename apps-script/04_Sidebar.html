@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: Arial, sans-serif; padding: 12px; }
+      button { width: 100%; margin: 6px 0; padding: 8px; cursor: pointer; }
+      pre { white-space: pre-wrap; background: #f5f5f5; padding: 8px; border-radius: 6px; }
+      .danger { background: #ffe8e8; }
+      .ok { background: #e8ffe8; }
+    </style>
+  </head>
+  <body>
+    <h2>💾 JRbIA Backup</h2>
+    <button onclick="loadStatus()">Afficher état</button>
+    <button onclick="run('JRBIA_backupSourceDryRun')">Source Drive dry-run</button>
+    <button onclick="run('JRBIA_backupDriveClaspGithubDryRun')">Backup complet dry-run</button>
+    <hr>
+    <button class="danger" onclick="runApply('JRBIA_backupSourceToDriveApply')">Source Drive APPLY</button>
+    <button class="danger" onclick="runApply('JRBIA_backupDriveClaspGithubApply')">Backup complet APPLY</button>
+    <pre id="out">Prêt.</pre>
+
+    <script>
+      function setOut(obj) {
+        document.getElementById('out').textContent =
+          typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+      }
+
+      function loadStatus() {
+        google.script.run
+          .withSuccessHandler(setOut)
+          .withFailureHandler(err => setOut(String(err)))
+          .JRBIA_getBackupStatus();
+      }
+
+      function run(fn) {
+        setOut('Exécution ' + fn + '...');
+        google.script.run
+          .withSuccessHandler(setOut)
+          .withFailureHandler(err => setOut(String(err)))
+          [fn]();
+      }
+
+      function runApply(fn) {
+        if (!confirm('APPLY protégé. Confirmer ?')) return;
+        run(fn);
+      }
+
+      loadStatus();
+    </script>
+  </body>
+</html>
