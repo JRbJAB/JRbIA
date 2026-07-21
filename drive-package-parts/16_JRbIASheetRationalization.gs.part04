@@ -1,0 +1,14 @@
+p.getRootFolder();
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
+  const copy = file.makeCopy('BACKUP — JRbIA cockpit — ' + label + ' — ' + stamp, folder);
+  return { id: copy.getId(), url: copy.getUrl(), name: copy.getName() };
+}
+
+function JRBIA_RAT_promote_(ss, staging, finalName, hidden) {
+  const existing = ss.getSheetByName(finalName);
+  if (existing) throw new Error('Onglet cible déjà présent: ' + finalName);
+  const sh = ss.getSheetByName(staging);
+  if (!sh) throw new Error('Staging manquant: ' + staging);
+  sh.setName(finalName);
+  if (hidden) sh.hideSheet(); else sh.showSheet();
+}
