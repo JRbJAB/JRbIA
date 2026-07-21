@@ -1,0 +1,166 @@
+/**
+ * 18_JRbIAAutopilot.gs
+ * JRbIA — Autopilotage SAFE_ONLY du cockpit.
+ * Version: v0.3.0-20260720
+ */
+
+const JRBIA_AUTO = {
+  VERSION: 'v0.3.0-20260720-LIVE-1B7D2A35',
+  ENABLED_PROP: 'JRBIA_AUTOPILOT_ENABLED',
+  MODE_PROP: 'JRBIA_AUTOPILOT_MODE',
+  WRITE_PROP: 'JRBIA_ALLOW_TRIGGER_WRITE',
+  APPROVAL_PROP: 'JRBIA_TRIGGER_APPROVAL',
+  APPROVAL: 'INSTALL_JRBIA_SAFE_AUTOPILOT_V1_20260720',
+  REPLACE_PROP: 'JRBIA_REPLACE_AUTOPILOT_TRIGGERS',
+  HANDLERS: [
+    'JRBIA_triggerDailyRefresh',
+    'JRBIA_triggerDailyQualityAudit',
+    'JRBIA_triggerWeeklyDeepAudit'
+  ]
+};
+
+function JRBIA_autopilotStatus() {
+  return JRBIA_AUTO_run_('JRBIA_autopilotStatus', 'READ_ONLY', function () {
+    const triggers = ScriptApp.getProjectTriggers();
+    const status = JRBIA_AUTO.HANDLERS.map(handler => {
+      const count = triggers.filter(t => t.getHandlerFunction() === handler).length;
+      return { handler, count, state: count === 1 ? 'OK' : (count === 0 ? 'MISSING' : 'DUPLICATE') };
+    });
+    const props = PropertiesService.getScriptProperties();
+    return {
+      status: status.every(x => x.count === 1) ? 'OK' : 'REVIEW',
+      functionName: 'JRBIA_autopilotStatus',
+      mode: 'READ_ONLY',
+      message: 'enabled=' + props.getProperty(JRBIA_AUTO.ENABLED_PROP) +
+        ' ; mode=' + props.getProperty(JRBIA_AUTO.MODE_PROP) +
+        ' ; triggers=' + JSON.stringify(status),
+      triggers: status
+    };
+  });
+}
+
+function JRBIA_installAutopilotTriggersApply() {
+  return JRBIA_AUTO_run_('JRBIA_installAutopilotTriggersApply', 'TRIGGER_APPLY', function () {
+    JRBIA_AUTO_assertTriggerWrite_();
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(30000)) throw new Error('Installation triggers déjà en cours.');
+    try {
+      const props = PropertiesService.getScriptProperties();
+      const replace = JRBIA_bool_(props.getProperty(JRBIA_AUTO.REPLACE_PROP));
+      const existing = ScriptApp.getProjectTriggers().filter(t =>
+        JRBIA_AUTO.HANDLERS.indexOf(t.getHandlerFunction()) >= 0
+      );
+      if (existing.length && !replace) {
+        throw new Error(JRBIA_AUTO.REPLACE_PROP + '=TRUE requis pour remplacer les triggers existants.');
+      }
+      existing.forEach(t => ScriptApp.deleteTrigger(t));
+
+      ScriptApp.newTrigger('JRBIA_triggerDailyRefresh')
+        .timeBased().everyDays(1).atHour(6).create();
+      ScriptApp.newTrigger('JRBIA_triggerDailyQualityAudit')
+        .timeBased().everyDays(1).atHour(7).create();
+      ScriptApp.newTrigger('JRBIA_triggerWeeklyDeepAudit')
+        .timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create();
+
+      props.setProperty(JRBIA_AUTO.ENABLED_PROP, 'TRUE');
+      props.setProperty(JRBIA_AUTO.MODE_PROP, 'SAFE_ONLY');
+      return JRBIA_autopilotStatus();
+    } finally {
+      lock.releaseLock();
+    }
+  });
+}
+
+function JRBIA_removeAutopilotTriggersApply() {
+  return JRBIA_AUTO_run_('JRBIA_removeAutopilotTriggersApply', 'TRIGGER_REMOVE', function () {
+    JRBIA_AUTO_assertTriggerWrite_();
+    let removed = 0;
+    ScriptApp.getProjectTriggers().forEach(t => {
+      if (JRBIA_AUTO.HANDLERS.indexOf(t.getHandlerFunction()) >= 0) {
+        ScriptApp.deleteTrigger(t);
+        removed++;
+      }
+    });
+    PropertiesService.getScriptProperties().setProperty(JRBIA_AUTO.ENABLED_PROP, 'FALSE');
+    return {
+      status: 'OK',
+      functionName: 'JRBIA_removeAutopilotTriggersApply',
+      mode: 'TRIGGER_REMOVE',
+      message: removed + ' trigger(s) supprimé(s).'
+    };
+  });
+}
+
+function JRBIA_triggerDailyRefresh() {
+  return JRBIA_AUTO_cycle_('DAILY_REFRESH', [
+    ['cockpit', () => typeof JRBIA_refreshCockpitSafe === 'function'
+      ? JRBIA_refreshCockpitSafe() : JRBIA_AUTO_skip_('JRBIA_refreshCockpitSafe')],
+    ['quality', () => typeof JRBIA_qualityAuditDryRun === 'function'
+      ? JRBIA_qualityAuditDryRun() : JRBIA_AUTO_skip_('JRBIA_qualityAuditDryRun')]
+  ]);
+}
+
+function JRBIA_triggerDailyQualityAudit() {
+  return JRBIA_AUTO_cycle_('DAILY_QUALITY', [
+    ['quality_report', () => typeof JRBIA_qualityAuditDryRun === 'function'
+      ? JRBIA_qualityAuditDryRun() : JRBIA_AUTO_skip_('JRBIA_qualityAuditDryRun')],
+    ['staging_verify', () => JRBIA_AUTO_verifyStagingIfPresent_()]
+  ]);
+}
+
+
+function JRBIA_AUTO_verifyStagingIfPresent_() {
+  if (typeof JRBIA_rationalizationVerifyStaging !== 'function') {
+    return JRBIA_AUTO_skip_('JRBIA_rationalizationVerifyStaging');
+  }
+  const config = JRBIA_getConfig_({ allowMissingOptional: true });
+  if (!config.cockpitSpreadsheetId) return JRBIA_AUTO_skip_('Cockpit Spreadsheet ID absent');
+  const ss = SpreadsheetApp.openById(config.cockpitSpreadsheetId);
+  const staging = [
+    '🧪 Portefeuille STAGING',
+    '🧪 Pilotage STAGING',
+    '🧪 Livrables & Versions STAGING',
+    '🧪 Journal AS STAGING',
+    '🧪 Gouvernance STAGING',
+    '🧪 Référentiels STAGING'
+  ];
+  const present = staging.filter(name => !!ss.getSheetByName(name));
+  if (present.length === 0) return JRBIA_AUTO_skip_('Staging non créé');
+  if (present.length !== staging.length) {
+    return {
+      status: 'REVIEW',
+      message: 'Staging partiel: ' + present.length + '/' + staging.length + ' — ' + present.join(', ')
+    };
+  }
+  return JRBIA_rationalizationVerifyStaging();
+}
+
+function JRBIA_triggerWeeklyDeepAudit() {
+  return JRBIA_AUTO_cycle_('WEEKLY_DEEP_AUDIT', [
+    ['sheet_audit', () => typeof JRBIA_sheetAuditDryRun === 'function'
+      ? JRBIA_sheetAuditDryRun() : JRBIA_AUTO_skip_('JRBIA_sheetAuditDryRun')],
+    ['quality', () => typeof JRBIA_qualityAuditDryRun === 'function'
+      ? JRBIA_qualityAuditDryRun() : JRBIA_AUTO_skip_('JRBIA_qualityAuditDryRun')],
+    ['backup_status', () => typeof JRBIA_getBackupStatus === 'function'
+      ? JRBIA_getBackupStatus() : JRBIA_AUTO_skip_('JRBIA_getBackupStatus')],
+    ['trigger_status', () => JRBIA_autopilotStatus()]
+  ]);
+}
+
+function JRBIA_runDailyRefreshNow() { return JRBIA_triggerDailyRefresh(); }
+function JRBIA_runDailyQualityNow() { return JRBIA_triggerDailyQualityAudit(); }
+function JRBIA_runWeeklyDeepAuditNow() { return JRBIA_triggerWeeklyDeepAudit(); }
+
+function JRBIA_AUTO_cycle_(cycle, jobs) {
+  return JRBIA_AUTO_run_('JRBIA_' + cycle, 'AUTOPILOT_SAFE_ONLY', function () {
+    JRBIA_AUTO_assertEnabled_();
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(15000)) {
+      return {
+        status: 'SKIPPED',
+        functionName: 'JRBIA_' + cycle,
+        mode: 'AUTOPILOT_SAFE_ONLY',
+        message: 'Une autre exécution détient le verrou.'
+      };
+    }
+    try
