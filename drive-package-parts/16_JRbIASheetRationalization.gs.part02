@@ -1,0 +1,164 @@
+).forEach(item => {
+    const x = item.obj;
+    rows.push([
+      'DEC-' + String(item.row).padStart(4, '0'), x['Date'], x['Projet'], 'Décision',
+      x['Type'], x['Décision'], x['Statut'], '', '', '',
+      '', x['Raison'], x['Next'], x['Impact dossiers'],
+      ['Impact repos=' + (x['Impact repos'] || ''), 'Source=' + (x['Source Doc'] || '')].join(' | '),
+      'Non', '🧱 Décisions', item.row
+    ]);
+  });
+
+  const backupSealed = JRBIA_RAT_isBackupSealed_(ss);
+  JRBIA_RAT_dataRows_(ss, '🗓️ Planning').forEach(item => {
+    const x = item.obj;
+    let status = x['Statut'];
+    let archived = 'Non';
+    let notes = '';
+    if (backupSealed &&
+        String(x['Projet'] || '').indexOf('Sauvegarde Drive CLASP GitHub') >= 0 &&
+        ['Fait','Scellé','Prêt','Clôturé'].indexOf(String(status || '')) < 0) {
+      notes = 'Ancien statut=' + status + ' ; archivé automatiquement car la chaîne est scellée.';
+      status = 'Archivé — chaîne scellée';
+      archived = 'Oui';
+    }
+    rows.push([
+      'PLAN-' + String(item.row).padStart(4, '0'), x['Jour'], x['Projet'], 'Action',
+      x['Chantier'], x['Action'], status, x['Priorité'], '', x['Owner'],
+      x['Dépendance'], '', '', x['Livrable'], notes, archived, '🗓️ Planning', item.row
+    ]);
+  });
+
+  JRBIA_RAT_writeTable_(ss, JRBIA_RAT.STAGING.PILOTAGE, header, rows, false);
+  return rows.length;
+}
+
+function JRBIA_RAT_buildDeliverables_(ss) {
+  const header = [
+    'Record ID','Date / Timestamp','Projet / Chaîne','Type','Nom / Composant',
+    'Version / Trace','Mode','Statut','Source','Cible','URL','Count','Risque',
+    'Next Action','Notes','Canonique','SourceSheet','SourceRow'
+  ];
+  const candidates = [];
+
+  JRBIA_RAT_dataRows_(ss, '🧾 Releases').forEach(item => {
+    const x = item.obj;
+    const placeholder = String(x['Release/Tag'] || '') === 'À rapatrier';
+    if (placeholder) return;
+    candidates.push({
+      key: JRBIA_RAT_key_(x['Projet'], x['Release/Tag'], ''),
+      score: placeholder ? 0 : JRBIA_RAT_statusScore_(x['Statut'], ''),
+      row: [
+        '', x['Date'], x['Projet'], placeholder ? 'Placeholder rapatriement' : 'Release',
+        x['Release/Tag'], x['HEAD'], '', x['Statut'], x['Source'], x['Dossier cible'],
+        JRBIA_RAT_extractUrl_(x['Notes']), '', '', x['Action suivante'], x['Notes'],
+        placeholder ? 'Non' : 'Oui', '🧾 Releases', item.row
+      ]
+    });
+  });
+
+  JRBIA_RAT_dataRows_(ss, '📦 Packs').forEach(item => {
+    const x = item.obj;
+    const url = JRBIA_RAT_extractUrl_(x['Notes']);
+    candidates.push({
+      key: JRBIA_RAT_key_(x['Projet'], x['Pack/Livrable'], url),
+      score: JRBIA_RAT_statusScore_(x['Statut'], url),
+      row: [
+        '', x['Date'], x['Projet'], x['Type'], x['Pack/Livrable'], '', '',
+        x['Statut'], x['Source'], x['Dossier cible'], url, '', '', x['Action'],
+        x['Notes'], '', '📦 Packs', item.row
+      ]
+    });
+  });
+
+  JRBIA_RAT_dataRows_(ss, '💾 Sauvegardes').forEach(item => {
+    const x = item.obj;
+    const url = JRBIA_RAT_extractUrl_([x['Document'], x['Notes']].join(' '));
+    candidates.push({
+      key: JRBIA_RAT_key_(x['Chaîne'], x['Composant'], url),
+      score: JRBIA_RAT_statusScore_(x['Statut'], url),
+      row: [
+        '', x['Date'], x['Chaîne'], 'Sauvegarde / chaîne', x['Composant'],
+        JRBIA_RAT_extractTrace_(x['Document'] + ' ' + x['Notes']), x['Mode'],
+        x['Statut'], x['Source'], x['Cible'], url, '', x['Risque'],
+        x['Action suivante'], [x['Document'], x['Notes']].filter(Boolean).join(' | '),
+        '', '💾 Sauvegardes', item.row
+      ]
+    });
+  });
+
+  JRBIA_RAT_dataRows_(ss, '📤 Exports AS').forEach(item => {
+    const x = item.obj;
+    candidates.push({
+      key: JRBIA_RAT_key_('JRbIA AS', x['Name/Target'] || x['Type'] || x['Trace ID'], x['URL']),
+      score: JRBIA_RAT_statusScore_(x['Status'], x['URL']),
+      row: [
+        '', x['Timestamp'], 'JRbIA AS', x['Type'], x['Name/Target'],
+        x['Trace ID'], x['Mode'], x['Status'], 'Apps Script live',
+        x['Name/Target'], x['URL'], x['Count'], '', '', x['Notes'],
+        '', '📤 Exports AS', item.row
+      ]
+    });
+  });
+
+  const groups = {};
+  candidates.forEach(c => {
+    if (!groups[c.key]) groups[c.key] = [];
+    groups[c.key].push(c);
+  });
+
+  const rows = [];
+  Object.keys(groups).sort().forEach((key, index) => {
+    const group = groups[key].sort((a, b) => b.score - a.score);
+    const canonical = group[0];
+    canonical.row[0] = 'ART-' + String(index + 1).padStart(4, '0');
+    canonical.row[15] = 'Oui';
+    if (group.length > 1) {
+      canonical.row[14] = [
+        canonical.row[14],
+        'Historique fusionné: ' + group.slice(1).map(x =>
+          x.row[16] + '#' + x.row[17] + ' [' + x.row[7] + ']'
+        ).join(', ')
+      ].filter(Boolean).join(' | ');
+    }
+    rows.push(canonical.row);
+  });
+
+  JRBIA_RAT_writeTable_(ss, JRBIA_RAT.STAGING.DELIVERABLES, header, rows, false);
+  return rows.length;
+}
+
+function JRBIA_RAT_buildJournal_(ss) {
+  const header = [
+    'Record ID','Timestamp','Trace ID','Fonction / Job','Mode','Statut','Version',
+    'Message','JSON','Origine','Durée ms','Notes','SourceSheet','SourceRow'
+  ];
+  const rows = JRBIA_RAT_dataRows_(ss, '🧾 Logs AS').map(item => {
+    const x = item.obj;
+    return [
+      'LOG-' + String(item.row).padStart(5, '0'), x['Timestamp'], x['Trace ID'],
+      x['Function'], x['Mode'], x['Status'], x['Version'], x['Message'], x['JSON'],
+      'Manuel / historique', '', '', '🧾 Logs AS', item.row
+    ];
+  });
+  JRBIA_RAT_writeTable_(ss, JRBIA_RAT.STAGING.JOURNAL, header, rows, false);
+  return rows.length;
+}
+
+function JRBIA_RAT_buildGovernance_(ss) {
+  const header = ['Record ID','Date','Domaine','Règle','Statut','Priorité','Document source','Notes','Owner','SourceSheet','SourceRow'];
+  const rows = JRBIA_RAT_dataRows_(ss, '⚙️ Instructions').map(item => {
+    const x = item.obj;
+    return ['GOV-' + String(item.row).padStart(4, '0'), x['Date'], x['Domaine'], x['Règle'], x['Statut'], x['Priorité'], x['Document source'], x['Notes'], x['Owner'], '⚙️ Instructions', item.row];
+  });
+  JRBIA_RAT_writeTable_(ss, JRBIA_RAT.STAGING.GOVERNANCE, header, rows, false);
+  return rows.length;
+}
+
+function JRBIA_RAT_buildReferences_(ss) {
+  const header = ['Record ID','Catégorie','Valeur','Actif','Ordre','Notes','SourceSheet','SourceRow'];
+  const sh = ss.getSheetByName('📋 Listes');
+  if (!sh) throw new Error('📋 Listes manquant.');
+  const values = sh.getDataRange().getDisplayValues();
+  const rows = [];
+  const headers = value

@@ -1,0 +1,148 @@
+/**
+ * 19_JRbIACockpitRefresh.gs
+ * JRbIA — Reconstruction sûre du cockpit.
+ * Version: v0.3.0-20260720
+ */
+
+const JRBIA_DASH = {
+  VERSION: 'v0.3.0-20260720-LIVE-1B7D2A35',
+  SHEET: '🎛️ Cockpit'
+};
+
+function JRBIA_refreshCockpitSafe() {
+  return JRBIA_DASH_run_('JRBIA_refreshCockpitSafe', 'SAFE_DERIVED_WRITE', function () {
+    const ss = JRBIA_DASH_ss_();
+    const sh = ss.getSheetByName(JRBIA_DASH.SHEET);
+    if (!sh) throw new Error('🎛️ Cockpit manquant.');
+
+    const sourceMode = ss.getSheetByName('📚 Portefeuille') &&
+      ss.getSheetByName('🧭 Pilotage') &&
+      ss.getSheetByName('📦 Livrables & Versions')
+      ? 'RATIONALIZED' : 'LEGACY';
+
+    const kpi = sourceMode === 'RATIONALIZED'
+      ? JRBIA_DASH_kpiRationalized_(ss)
+      : JRBIA_DASH_kpiLegacy_(ss);
+
+    const priority = JRBIA_DASH_priority_(ss, sourceMode);
+    const qaProps = PropertiesService.getScriptProperties();
+
+    sh.getRange('A1:L30').clearContent();
+    sh.getRange('A1:L1').merge().setValue('🎛️ JRbIA — Cockpit de pilotage');
+    sh.getRange('A2:L2').merge().setValue(
+      'Portefeuille, pilotage documentaire, livrables, qualité et identité — mode ' + sourceMode
+    );
+
+    sh.getRange('A4:D4').setValues([['Indicateur','Valeur','Statut','Source']]);
+    sh.getRange('A5:D12').setValues([
+      ['Projets actifs', kpi.activeProjects, '', kpi.projectSource],
+      ['Repos suivis', kpi.repos, '', kpi.projectSource],
+      ['Actions ouvertes', kpi.openActions, '', kpi.pilotageSource],
+      ['Gates bloquants', kpi.blockingGates, '', kpi.pilotageSource],
+      ['Rapatriements ouverts', kpi.openRapatriations, '', '🗂️ Rapatriement'],
+      ['Livrables canoniques', kpi.canonicalDeliverables, '', kpi.deliverableSource],
+      ['Anomalies qualité', Number(qaProps.getProperty('JRBIA_QA_LAST_ISSUE_COUNT') || 0), qaProps.getProperty('JRBIA_QA_LAST_STATUS') || 'NON AUDITÉ', 'JRBIA QA'],
+      ['Identité validée', kpi.identityValidated + '/' + kpi.identityTotal, '', '🎨 Identité JRbIA']
+    ]);
+
+    sh.getRange('F4:L4').setValues([['Priorité immédiate','Projet','Priorité','Statut','Owner','Next','Preuve']]);
+    sh.getRange('F5:L5').setValues([[
+      priority.subject, priority.project, priority.priority, priority.status,
+      priority.owner, priority.next, priority.evidence
+    ]]);
+
+    sh.getRange('F8:L8').setValues([[
+      'Fraîcheur', new Date(), '', sourceMode, '',
+      qaProps.getProperty('JRBIA_QA_LAST_RUN') || 'Jamais',
+      qaProps.getProperty('JRBIA_LAST_WEEKLY_DEEP_AUDIT_STATUS') || 'NON AUDITÉ'
+    ]]);
+
+    sh.getRange('A1:L1').setBackground('#1F4E78').setFontColor('#FFFFFF').setFontWeight('bold');
+    sh.getRange('A4:D4').setBackground('#4472C4').setFontColor('#FFFFFF').setFontWeight('bold');
+    sh.getRange('F4:L4').setBackground('#4472C4').setFontColor('#FFFFFF').setFontWeight('bold');
+    sh.getRange('A1:L20').setWrap(true).setVerticalAlignment('top');
+    sh.setFrozenRows(4);
+    sh.autoResizeColumns(1, 12);
+
+    return {
+      status: 'OK',
+      functionName: 'JRBIA_refreshCockpitSafe',
+      mode: 'SAFE_DERIVED_WRITE',
+      message: 'Cockpit actualisé ; mode=' + sourceMode + ' ; priorité=' + priority.subject,
+      sourceMode, kpi, priority
+    };
+  });
+}
+
+function JRBIA_addPilotageMenu_() {
+  SpreadsheetApp.getUi()
+    .createMenu('🧭 JRbIA Pilotage')
+    .addItem('Actualiser le cockpit', 'JRBIA_refreshCockpitSafe')
+    .addItem('Audit qualité — dry-run', 'JRBIA_qualityAuditDryRun')
+    .addItem('Audit structure — dry-run', 'JRBIA_sheetAuditDryRun')
+    .addItem('Statut autopilotage', 'JRBIA_autopilotStatus')
+    .addSeparator()
+    .addItem('Vérifier staging', 'JRBIA_rationalizationVerifyStaging')
+    .addToUi();
+}
+
+function JRBIA_DASH_kpiLegacy_(ss) {
+  return {
+    activeProjects: JRBIA_DASH_countWhere_(ss, '📚 Projets', 'Statut', ['Actif']),
+    repos: JRBIA_DASH_countRows_(ss, '🔗 Repos'),
+    openActions: JRBIA_DASH_countOpenLegacyActions_(ss),
+    blockingGates: JRBIA_DASH_countBlockingGatesLegacy_(ss),
+    openRapatriations: JRBIA_DASH_countWhere_(ss, '🗂️ Rapatriement', 'Statut', ['Ouvert','À rapatrier','En attente']),
+    canonicalDeliverables: JRBIA_DASH_countWhere_(ss, '📦 Packs', 'Statut', ['Classé']),
+    identityValidated: JRBIA_DASH_countWhere_(ss, '🎨 Identité JRbIA', 'Statut', ['Validé'], 8),
+    identityTotal: Math.max(0, JRBIA_DASH_countRows_(ss, '🎨 Identité JRbIA', 8)),
+    projectSource: '📚 Projets + 🔗 Repos',
+    pilotageSource: '🗓️ Planning + 🧪 Gates',
+    deliverableSource: '📦 Packs'
+  };
+}
+
+function JRBIA_DASH_kpiRationalized_(ss) {
+  return {
+    activeProjects: JRBIA_DASH_countWhere_(ss, '📚 Portefeuille', 'Statut', ['Actif'], 1, { Type: 'Projet' }),
+    repos: JRBIA_DASH_countWhere_(ss, '📚 Portefeuille', 'Type', ['Repo']),
+    openActions: JRBIA_DASH_countWhere_(ss, '🧭 Pilotage', 'Type', ['Action'], 1, null, {
+      field: 'Statut', excluded: ['Fait','Scellé','Prêt','Clôturé','Archivé — chaîne scellée']
+    }),
+    blockingGates: JRBIA_DASH_countWhere_(ss, '🧭 Pilotage', 'Type', ['Gate'], 1, { Blocking: 'Oui' }, {
+      field: 'Statut', excluded: ['OK','PASS','Appliqué','Non','False']
+    }),
+    openRapatriations: JRBIA_DASH_countWhere_(ss, '🗂️ Rapatriement', 'Statut', ['Ouvert','À rapatrier','En attente']),
+    canonicalDeliverables: JRBIA_DASH_countWhere_(ss, '📦 Livrables & Versions', 'Canonique', ['Oui']),
+    identityValidated: JRBIA_DASH_countWhere_(ss, '🎨 Identité JRbIA', 'Statut', ['Validé'], 8),
+    identityTotal: Math.max(0, JRBIA_DASH_countRows_(ss, '🎨 Identité JRbIA', 8)),
+    projectSource: '📚 Portefeuille',
+    pilotageSource: '🧭 Pilotage',
+    deliverableSource: '📦 Livrables & Versions'
+  };
+}
+
+function JRBIA_DASH_priority_(ss, mode) {
+  if (mode === 'RATIONALIZED') {
+    const rows = JRBIA_DASH_rows_(ss, '🧭 Pilotage', 1);
+    const candidates = rows.filter(x =>
+      x['Type'] === 'Action' &&
+      ['Fait','Scellé','Prêt','Clôturé','Archivé — chaîne scellée'].indexOf(String(x['Statut'] || '')) < 0
+    );
+    candidates.sort((a, b) =>
+      JRBIA_DASH_priorityScore_(a['Priorité']) - JRBIA_DASH_priorityScore_(b['Priorité'])
+    );
+    const x = candidates[0] || {};
+    return {
+      subject: x['Sujet'] || 'Aucune action ouverte',
+      project: x['Projet'] || '',
+      priority: x['Priorité'] || '',
+      status: x['Statut'] || '',
+      owner: x['Owner'] || '',
+      next: x['Next Action'] || '',
+      evidence: x['Source / Preuve'] || ''
+    };
+  }
+
+  const rows = JRBIA_DASH_rows_(ss, '🗓️ Planning', 1);
+  const backupSealed = JRBIA_DASH_isBackupSealed_(

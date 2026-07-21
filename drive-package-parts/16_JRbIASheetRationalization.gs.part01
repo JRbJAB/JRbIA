@@ -1,0 +1,158 @@
+s.push('Journal < 6');
+    if (counts.governance < 8) errors.push('Gouvernance < 8');
+    if (counts.references < 20) errors.push('Référentiels < 20');
+    if (duplicates.length) errors.push('IDs dupliqués=' + duplicates.join(','));
+
+    return {
+      status: missing.length || errors.length ? 'REVIEW' : 'OK',
+      functionName: 'JRBIA_rationalizationVerifyStaging',
+      mode: 'VERIFY_READ_ONLY',
+      message: 'missing=' + missing.join(',') +
+        ' ; errors=' + errors.join(',') +
+        ' ; counts=' + JSON.stringify(counts),
+      missing, errors, duplicates, counts
+    };
+  });
+}
+
+function JRBIA_rationalizationFinalizeApply() {
+  return JRBIA_RAT_run_('JRBIA_rationalizationFinalizeApply', 'FINALIZE_APPLY', function () {
+    JRBIA_RAT_assertApproval_(JRBIA_RAT.FINAL_APPROVAL);
+    const verify = JRBIA_rationalizationVerifyStaging();
+    if (verify.status !== 'OK') throw new Error('Staging non validé: ' + verify.message);
+
+    const lock = LockService.getDocumentLock();
+    if (!lock.tryLock(30000)) throw new Error('Finalisation déjà en cours.');
+    try {
+      const ss = JRBIA_RAT_ss_();
+      const backup = JRBIA_RAT_backup_(ss, 'pre_finalize');
+      const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+
+      JRBIA_RAT.SOURCES_TO_ARCHIVE.forEach(name => {
+        const sh = ss.getSheetByName(name);
+        if (!sh) return;
+        sh.setName(JRBIA_RAT.ARCHIVE_PREFIX + name + ' — ' + stamp);
+        sh.hideSheet();
+      });
+
+      JRBIA_RAT_promote_(ss, JRBIA_RAT.STAGING.PORTFOLIO, JRBIA_RAT.FINAL.PORTFOLIO, false);
+      JRBIA_RAT_promote_(ss, JRBIA_RAT.STAGING.PILOTAGE, JRBIA_RAT.FINAL.PILOTAGE, false);
+      JRBIA_RAT_promote_(ss, JRBIA_RAT.STAGING.DELIVERABLES, JRBIA_RAT.FINAL.DELIVERABLES, false);
+      JRBIA_RAT_promote_(ss, JRBIA_RAT.STAGING.JOURNAL, JRBIA_RAT.FINAL.JOURNAL, false);
+      JRBIA_RAT_promote_(ss, JRBIA_RAT.STAGING.GOVERNANCE, JRBIA_RAT.FINAL.GOVERNANCE, false);
+      JRBIA_RAT_promote_(ss, JRBIA_RAT.STAGING.REFERENCES, JRBIA_RAT.FINAL.REFERENCES, true);
+
+      if (typeof JRBIA_refreshCockpitSafe === 'function') JRBIA_refreshCockpitSafe();
+      SpreadsheetApp.flush();
+
+      return {
+        status: 'OK',
+        functionName: 'JRBIA_rationalizationFinalizeApply',
+        mode: 'FINALIZE_APPLY',
+        message: 'Tables promues ; sources archivées et masquées ; backup=' + backup.url,
+        backup
+      };
+    } finally {
+      lock.releaseLock();
+    }
+  });
+}
+
+function JRBIA_rationalizationPurgeArchivedApply() {
+  return JRBIA_RAT_run_('JRBIA_rationalizationPurgeArchivedApply', 'PURGE_APPLY', function () {
+    const props = PropertiesService.getScriptProperties();
+    if (!JRBIA_bool_(props.getProperty(JRBIA_RAT.BUILD_WRITE_PROP))) {
+      throw new Error(JRBIA_RAT.BUILD_WRITE_PROP + '=TRUE requis.');
+    }
+    if (props.getProperty(JRBIA_RAT.PURGE_APPROVAL_PROP) !== JRBIA_RAT.PURGE_APPROVAL) {
+      throw new Error('Approval purge invalide.');
+    }
+
+    const ss = JRBIA_RAT_ss_();
+    const backup = JRBIA_RAT_backup_(ss, 'pre_purge');
+    const archived = ss.getSheets().filter(sh => sh.getName().indexOf(JRBIA_RAT.ARCHIVE_PREFIX) === 0);
+    const deleted = archived.map(sh => sh.getName());
+    archived.forEach(sh => ss.deleteSheet(sh));
+
+    return {
+      status: 'OK',
+      functionName: 'JRBIA_rationalizationPurgeArchivedApply',
+      mode: 'PURGE_APPLY',
+      message: archived.length + ' onglet(s) archivé(s) supprimé(s) ; backup=' + backup.url,
+      backup, deleted
+    };
+  });
+}
+
+/* ---------- Construction des tables staging ---------- */
+
+function JRBIA_RAT_buildPortfolio_(ss) {
+  const header = [
+    'Record ID','Type','Emoji','Projet','Nature','Dossier Drive','Repository/Remote',
+    'Source locale','Branche','HEAD','Tag','Statut','Priorité','Owner','Risque',
+    'Next Action','Dernière MAJ','Notes','SourceSheet','SourceRow'
+  ];
+  const rows = [];
+
+  JRBIA_RAT_dataRows_(ss, '📚 Projets').forEach(item => {
+    const x = item.obj;
+    const type = String(x['Nature'] || '').toLowerCase().indexOf('sous-chantier') >= 0 || String(x['Projet'] || '').indexOf('— Scission') >= 0 ? 'Sous-chantier' : 'Projet';
+    rows.push([
+      'PRJ-' + String(item.row).padStart(4, '0'), type, x['Emoji'], x['Projet'],
+      x['Nature'], x['Dossier Drive'], '', '', '', '', '', x['Statut'], x['Priorité'],
+      x['Owner'], x['Risque'], x['Next Action'], x['Dernière MAJ'], x['Notes'],
+      '📚 Projets', item.row
+    ]);
+  });
+
+  JRBIA_RAT_dataRows_(ss, '🔗 Repos').forEach(item => {
+    let x = item.obj;
+    if (String(x['Projet/Repo'] || '') === 'JRbIA' && !JRBIA_RAT_isEmoji_(x['Emoji'])) {
+      x = {
+        'Emoji': '🧠',
+        'Projet/Repo': 'JRbIA',
+        'Chemin local source': '',
+        'Remote': 'JRbJAB/JRbIA',
+        'Branche': 'main',
+        'HEAD': 'fdcb5784594cd5682df63b49ba889eb9f62c3682',
+        'Tag': '',
+        'Statut': 'Apps Script mirror pushed OK',
+        'Dossier JRbIA lié': '🛠️ Admin Dev / 💾 Sauvegarde Drive CLASP GitHub',
+        'Règle': 'Pointer uniquement / pas de repo copié',
+        'Next': 'Mettre à jour HEAD après prochain backup live',
+        'Dernière MAJ': new Date(),
+        '_repairNote': 'Ligne source décalée réparée en staging ; HEAD vérifié le 2026-07-20.'
+      };
+    }
+    rows.push([
+      'REPO-' + String(item.row).padStart(4, '0'), 'Repo', x['Emoji'], x['Projet/Repo'],
+      'Repository technique', x['Dossier JRbIA lié'], x['Remote'],
+      x['Chemin local source'], x['Branche'], x['HEAD'], x['Tag'], x['Statut'],
+      '', 'Julien / JRbIA', '', x['Next'], x['Dernière MAJ'],
+      [x['Règle'], x['_repairNote']].filter(Boolean).join(' | '),
+      '🔗 Repos', item.row
+    ]);
+  });
+
+  JRBIA_RAT_writeTable_(ss, JRBIA_RAT.STAGING.PORTFOLIO, header, rows, false);
+  return rows.length;
+}
+
+function JRBIA_RAT_buildPilotage_(ss) {
+  const header = [
+    'Record ID','Date','Projet','Type','Sujet','Description / Décision','Statut','Priorité',
+    'Blocking','Owner','Dépendance','Source / Preuve','Next Action','Cible / Livrable',
+    'Notes','Archivé','SourceSheet','SourceRow'
+  ];
+  const rows = [];
+
+  JRBIA_RAT_dataRows_(ss, '🧪 Gates').forEach(item => {
+    const x = item.obj;
+    rows.push([
+      'GATE-' + String(item.row).padStart(4, '0'), x['Date'], x['Projet'], 'Gate',
+      x['Gate/Test'], x['Notes'], x['Résultat'], '', x['Blocking'], '',
+      '', x['Source'], x['Action'], x['Dossier cible'], '', 'Non', '🧪 Gates', item.row
+    ]);
+  });
+
+  JRBIA_RAT_dataRows_(ss, '🧱 Décisions'
