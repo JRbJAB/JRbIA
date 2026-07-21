@@ -1,0 +1,82 @@
+ {
+      const results = [];
+      const failed = [];
+      jobs.forEach(job => {
+        try {
+          const value = job[1]();
+          const ok = !value || !value.status || ['OK','READY','PASS','SKIPPED'].some(x =>
+            String(value.status).indexOf(x) >= 0
+          );
+          results.push({ id: job[0], ok, value: value || null });
+          if (!ok) failed.push(job[0]);
+        } catch (err) {
+          failed.push(job[0]);
+          results.push({ id: job[0], ok: false, error: err.message || String(err) });
+        }
+      });
+
+      const props = PropertiesService.getScriptProperties();
+      props.setProperty('JRBIA_LAST_' + cycle, new Date().toISOString());
+      props.setProperty('JRBIA_LAST_' + cycle + '_STATUS', failed.length ? 'REVIEW' : 'OK');
+
+      return {
+        status: failed.length ? 'REVIEW' : 'OK',
+        functionName: 'JRBIA_' + cycle,
+        mode: 'AUTOPILOT_SAFE_ONLY',
+        message: 'jobs=' + results.length + ' ; failed=' + failed.join(','),
+        results
+      };
+    } finally {
+      lock.releaseLock();
+    }
+  });
+}
+
+function JRBIA_AUTO_assertEnabled_() {
+  const props = PropertiesService.getScriptProperties();
+  if (!JRBIA_bool_(props.getProperty(JRBIA_AUTO.ENABLED_PROP))) {
+    throw new Error(JRBIA_AUTO.ENABLED_PROP + '!=TRUE.');
+  }
+  if ((props.getProperty(JRBIA_AUTO.MODE_PROP) || 'SAFE_ONLY') !== 'SAFE_ONLY') {
+    throw new Error('Seul le mode SAFE_ONLY est autorisé.');
+  }
+}
+
+function JRBIA_AUTO_assertTriggerWrite_() {
+  const props = PropertiesService.getScriptProperties();
+  if (!JRBIA_bool_(props.getProperty(JRBIA_AUTO.WRITE_PROP))) {
+    throw new Error(JRBIA_AUTO.WRITE_PROP + '=TRUE requis.');
+  }
+  if (props.getProperty(JRBIA_AUTO.APPROVAL_PROP) !== JRBIA_AUTO.APPROVAL) {
+    throw new Error(JRBIA_AUTO.APPROVAL_PROP + '=' + JRBIA_AUTO.APPROVAL + ' requis.');
+  }
+}
+
+function JRBIA_AUTO_skip_(name) {
+  return { status: 'SKIPPED', message: name + ' absent.' };
+}
+
+function JRBIA_AUTO_run_(functionName, mode, fn) {
+  const config = JRBIA_getConfig_({ allowMissingOptional: true });
+  const traceId = JRBIA_traceId_();
+  const started = Date.now();
+  try {
+    const result = fn() || {};
+    result.traceId = traceId;
+    result.functionName = result.functionName || functionName;
+    result.mode = result.mode || mode;
+    result.status = result.status || 'OK';
+    result.message = result.message || '';
+    result.durationMs = Date.now() - started;
+    JRBIA_log_(config, result);
+    return result;
+  } catch (err) {
+    const result = {
+      traceId, functionName, mode, status: 'ERROR',
+      message: err && err.message ? err.message : String(err),
+      durationMs: Date.now() - started
+    };
+    JRBIA_log_(config, result);
+    throw err;
+  }
+}
