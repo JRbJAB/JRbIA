@@ -1,0 +1,46 @@
+name: JRbIA Drive Package Bridge
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'drive-package/**'
+      - 'drive-package-parts/**'
+      - '.github/workflows/jrbia-drive-package.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct install package
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST="drive-package/JRbIA_Cockpit_Install_v0.4R2_LIVE_1b7d2a35"
+          cat drive-package-parts/16_JRbIASheetRationalization.gs.part* > "$DEST/16_JRbIASheetRationalization.gs"
+          cat drive-package-parts/17_JRbIADataQuality.gs.part* > "$DEST/17_JRbIADataQuality.gs"
+          cat drive-package-parts/18_JRbIAAutopilot.gs.part* > "$DEST/18_JRbIAAutopilot.gs"
+          cat drive-package-parts/19_JRbIACockpitRefresh.gs.part* > "$DEST/19_JRbIACockpitRefresh.gs"
+          test -s "$DEST/01_Config.gs"
+          test -s "$DEST/03_Menu_UI.gs"
+          test -s "$DEST/14_SourceBackup.gs"
+          test -s "$DEST/16_JRbIASheetRationalization.gs"
+          test -s "$DEST/17_JRbIADataQuality.gs"
+          test -s "$DEST/18_JRbIAAutopilot.gs"
+          test -s "$DEST/19_JRbIACockpitRefresh.gs"
+          test -s "$DEST/appsscript.json"
+          find "$DEST" -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Upload install ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: JRbIA_Cockpit_Install_v0.4R2_LIVE_1b7d2a35
+          path: drive-package/JRbIA_Cockpit_Install_v0.4R2_LIVE_1b7d2a35/*
+          if-no-files-found: error
+          retention-days: 1
