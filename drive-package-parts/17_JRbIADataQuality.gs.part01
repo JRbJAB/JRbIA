@@ -1,0 +1,50 @@
+rifier le statut de rationalisation.'});
+  });
+}
+
+function JRBIA_QA_rows_(ss, sheetName) {
+  const sh = ss.getSheetByName(sheetName);
+  if (!sh) return [];
+  const values = sh.getDataRange().getValues();
+  if (!values.length) return [];
+  const headers = values[0].map(x => String(x || '').trim());
+  const out = [];
+  for (let r = 1; r < values.length; r++) {
+    if (!values[r].some(v => v !== '' && v !== null)) continue;
+    const obj = {};
+    headers.forEach((h, c) => { if (h) obj[h] = values[r][c]; });
+    out.push({ row: r + 1, obj });
+  }
+  return out;
+}
+
+function JRBIA_QA_ss_() {
+  const config = JRBIA_getConfig_({ allowMissingOptional: true });
+  if (!config.cockpitSpreadsheetId) throw new Error('JRBIA_COCKPIT_SPREADSHEET_ID manquant.');
+  return SpreadsheetApp.openById(config.cockpitSpreadsheetId);
+}
+
+function JRBIA_QA_run_(functionName, mode, fn) {
+  const config = JRBIA_getConfig_({ allowMissingOptional: true });
+  const traceId = JRBIA_traceId_();
+  const started = Date.now();
+  try {
+    const result = fn() || {};
+    result.traceId = traceId;
+    result.functionName = result.functionName || functionName;
+    result.mode = result.mode || mode;
+    result.status = result.status || 'OK';
+    result.message = result.message || '';
+    result.durationMs = Date.now() - started;
+    JRBIA_log_(config, result);
+    return result;
+  } catch (err) {
+    const result = {
+      traceId, functionName, mode, status: 'ERROR',
+      message: err && err.message ? err.message : String(err),
+      durationMs: Date.now() - started
+    };
+    JRBIA_log_(config, result);
+    throw err;
+  }
+}
