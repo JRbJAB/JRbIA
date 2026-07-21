@@ -1,0 +1,175 @@
+/**
+ * 16_JRbIASheetRationalization.gs
+ * JRbIA — Rationalisation contrôlée du cockpit.
+ * Version: v0.1.0-20260720
+ *
+ * Phases:
+ * 1. audit read-only ;
+ * 2. création de tables STAGING ;
+ * 3. vérification ;
+ * 4. finalisation protégée par rename + hide ;
+ * 5. purge séparée et exceptionnellement autorisée.
+ */
+
+const JRBIA_RAT = {
+  VERSION: 'v0.3.0-20260720-LIVE-1B7D2A35',
+  BUILD_WRITE_PROP: 'JRBIA_ALLOW_RATIONALIZATION_WRITE',
+  BUILD_APPROVAL_PROP: 'JRBIA_RATIONALIZATION_APPROVAL',
+  BUILD_APPROVAL: 'BUILD_JRBIA_COCKPIT_STAGING_V1_20260720',
+  FINAL_APPROVAL: 'APPLY_JRBIA_COCKPIT_RATIONALIZATION_V1_20260720',
+  PURGE_APPROVAL_PROP: 'JRBIA_RATIONALIZATION_PURGE_APPROVAL',
+  PURGE_APPROVAL: 'PURGE_JRBIA_ARCHIVED_SOURCE_TABS_V1_20260720',
+  ARCHIVE_PREFIX: '🗄️ SOURCE — ',
+  STAGING: {
+    PORTFOLIO: '🧪 Portefeuille STAGING',
+    PILOTAGE: '🧪 Pilotage STAGING',
+    DELIVERABLES: '🧪 Livrables & Versions STAGING',
+    JOURNAL: '🧪 Journal AS STAGING',
+    GOVERNANCE: '🧪 Gouvernance STAGING',
+    REFERENCES: '🧪 Référentiels STAGING'
+  },
+  FINAL: {
+    PORTFOLIO: '📚 Portefeuille',
+    PILOTAGE: '🧭 Pilotage',
+    DELIVERABLES: '📦 Livrables & Versions',
+    JOURNAL: '🧾 Journal AS',
+    GOVERNANCE: '⚙️ Gouvernance',
+    REFERENCES: '📋 Référentiels'
+  },
+  SOURCES_TO_ARCHIVE: [
+    '📤 Exports AS', '🧾 Logs AS', '📚 Projets', '🔗 Repos', '🧾 Releases',
+    '🧪 Gates', '🧱 Décisions', '⚙️ Instructions', '📦 Packs',
+    '🗓️ Planning', '📋 Listes', '💾 Sauvegardes'
+  ],
+  KEEP: ['🎛️ Cockpit', '🗂️ Rapatriement', '🎨 Identité JRbIA']
+};
+
+function JRBIA_sheetAuditDryRun() {
+  return JRBIA_RAT_run_('JRBIA_sheetAuditDryRun', 'READ_ONLY', function () {
+    const ss = JRBIA_RAT_ss_();
+    const issues = [];
+    const inventory = ss.getSheets().map(sh => ({
+      name: sh.getName(),
+      id: sh.getSheetId(),
+      rows: sh.getLastRow(),
+      cols: sh.getLastColumn(),
+      hidden: sh.isSheetHidden()
+    }));
+
+    JRBIA_RAT_requiredHeaders_(ss, '🔗 Repos',
+      ['Emoji','Projet/Repo','Chemin local source','Remote','Branche','HEAD','Tag','Statut'],
+      issues);
+    JRBIA_RAT_requiredHeaders_(ss, '🗓️ Planning',
+      ['Semaine','Jour','Chantier','Action','Projet','Priorité','Statut','Owner'],
+      issues);
+    JRBIA_RAT_requiredHeaders_(ss, '📦 Packs',
+      ['Date','Projet','Pack/Livrable','Type','Source','Dossier cible','Statut'],
+      issues);
+
+    const malformedRepos = JRBIA_RAT_findMalformedRepos_(ss);
+    malformedRepos.forEach(x => issues.push({
+      level: 'P0', code: 'REPO_SCHEMA_SHIFT', sheet: '🔗 Repos',
+      message: 'Ligne ' + x.row + ' mal alignée: ' + JSON.stringify(x.values)
+    }));
+
+    const stale = JRBIA_RAT_findStalePlanning_(ss);
+    if (stale.length) issues.push({
+      level: 'P0', code: 'STALE_PLANNING', sheet: '🗓️ Planning',
+      message: stale.length + ' tâche(s) backup obsolète(s) après seal.'
+    });
+
+    const duplicates = JRBIA_RAT_duplicatePackNames_(ss);
+    if (duplicates.length) issues.push({
+      level: 'P1', code: 'PACK_DUPLICATES', sheet: '📦 Packs',
+      message: duplicates.join(', ')
+    });
+
+    const formulaErrors = JRBIA_RAT_formulaErrors_(ss);
+    if (formulaErrors.length) issues.push({
+      level: 'P0', code: 'FORMULA_ERRORS', sheet: '*',
+      message: formulaErrors.join(' | ')
+    });
+
+    return {
+      status: issues.some(x => x.level === 'P0') ? 'REVIEW' : 'OK',
+      functionName: 'JRBIA_sheetAuditDryRun',
+      mode: 'READ_ONLY',
+      message: 'Sheets=' + inventory.length +
+        ' ; issues=' + issues.length +
+        ' ; malformedRepos=' + malformedRepos.length +
+        ' ; stalePlanning=' + stale.length +
+        ' ; duplicatePacks=' + duplicates.length +
+        ' ; formulaErrors=' + formulaErrors.length,
+      inventory, issues, malformedRepos, stalePlanning: stale,
+      duplicatePacks: duplicates, formulaErrors
+    };
+  });
+}
+
+function JRBIA_rationalizationBuildStagingApply() {
+  return JRBIA_RAT_run_('JRBIA_rationalizationBuildStagingApply', 'STAGING_APPLY', function () {
+    JRBIA_RAT_assertApproval_(JRBIA_RAT.BUILD_APPROVAL);
+    const lock = LockService.getDocumentLock();
+    if (!lock.tryLock(30000)) throw new Error('Rationalisation déjà en cours.');
+    try {
+      const ss = JRBIA_RAT_ss_();
+      const backup = JRBIA_RAT_backup_(ss, 'pre_staging');
+      const counts = {};
+
+      counts.portfolio = JRBIA_RAT_buildPortfolio_(ss);
+      counts.pilotage = JRBIA_RAT_buildPilotage_(ss);
+      counts.deliverables = JRBIA_RAT_buildDeliverables_(ss);
+      counts.journal = JRBIA_RAT_buildJournal_(ss);
+      counts.governance = JRBIA_RAT_buildGovernance_(ss);
+      counts.references = JRBIA_RAT_buildReferences_(ss);
+
+      SpreadsheetApp.flush();
+      return {
+        status: 'OK',
+        functionName: 'JRBIA_rationalizationBuildStagingApply',
+        mode: 'STAGING_APPLY',
+        message: 'Staging créé ; backup=' + backup.url + ' ; counts=' + JSON.stringify(counts),
+        backup, counts
+      };
+    } finally {
+      lock.releaseLock();
+    }
+  });
+}
+
+function JRBIA_rationalizationVerifyStaging() {
+  return JRBIA_RAT_run_('JRBIA_rationalizationVerifyStaging', 'VERIFY_READ_ONLY', function () {
+    const ss = JRBIA_RAT_ss_();
+    const expected = [
+      JRBIA_RAT.STAGING.PORTFOLIO, JRBIA_RAT.STAGING.PILOTAGE,
+      JRBIA_RAT.STAGING.DELIVERABLES, JRBIA_RAT.STAGING.JOURNAL,
+      JRBIA_RAT.STAGING.GOVERNANCE, JRBIA_RAT.STAGING.REFERENCES
+    ];
+    const missing = expected.filter(name => !ss.getSheetByName(name));
+    const duplicates = [];
+    expected.forEach(name => {
+      const sh = ss.getSheetByName(name);
+      if (!sh) return;
+      const ids = sh.getLastRow() > 1
+        ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getDisplayValues().flat().filter(Boolean)
+        : [];
+      const seen = {};
+      ids.forEach(id => {
+        if (seen[id]) duplicates.push(name + ':' + id);
+        seen[id] = true;
+      });
+    });
+
+    const counts = {
+      portfolio: JRBIA_RAT_count_(ss, JRBIA_RAT.STAGING.PORTFOLIO),
+      pilotage: JRBIA_RAT_count_(ss, JRBIA_RAT.STAGING.PILOTAGE),
+      deliverables: JRBIA_RAT_count_(ss, JRBIA_RAT.STAGING.DELIVERABLES),
+      journal: JRBIA_RAT_count_(ss, JRBIA_RAT.STAGING.JOURNAL),
+      governance: JRBIA_RAT_count_(ss, JRBIA_RAT.STAGING.GOVERNANCE),
+      references: JRBIA_RAT_count_(ss, JRBIA_RAT.STAGING.REFERENCES)
+    };
+
+    const errors = [];
+    if (counts.portfolio < 16) errors.push('Portefeuille < 16');
+    if (counts.pilotage < 90) errors.push('Pilotage < 90');
+    if (counts.journal < 6) error
