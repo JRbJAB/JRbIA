@@ -1,0 +1,172 @@
+/**
+ * 17_JRbIADataQuality.gs
+ * JRbIA — Contrôles de qualité du cockpit.
+ * Version: v0.1.0-20260720
+ */
+
+const JRBIA_QA = {
+  VERSION: 'v0.3.0-20260720-LIVE-1B7D2A35',
+  LAST_STATUS_PROP: 'JRBIA_QA_LAST_STATUS',
+  LAST_COUNT_PROP: 'JRBIA_QA_LAST_ISSUE_COUNT',
+  LAST_RUN_PROP: 'JRBIA_QA_LAST_RUN',
+  REPORT_SHEET: '🧪 Audit Qualité JRbIA'
+};
+
+function JRBIA_qualityAuditDryRun() {
+  return JRBIA_QA_run_('JRBIA_qualityAuditDryRun', 'READ_ONLY', function () {
+    const ss = JRBIA_QA_ss_();
+    const issues = [];
+
+    JRBIA_QA_checkRepoSchema_(ss, issues);
+    JRBIA_QA_checkPlanningSeal_(ss, issues);
+    JRBIA_QA_checkPackDuplicates_(ss, issues);
+    JRBIA_QA_checkReleasePlaceholders_(ss, issues);
+    JRBIA_QA_checkReferenceCoverage_(ss, issues);
+    JRBIA_QA_checkFormulaErrors_(ss, issues);
+    JRBIA_QA_checkRequiredSheets_(ss, issues);
+
+    const p0 = issues.filter(x => x.level === 'P0').length;
+    const p1 = issues.filter(x => x.level === 'P1').length;
+    const status = p0 ? 'P0_REVIEW' : (p1 ? 'P1_REVIEW' : 'OK');
+
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty(JRBIA_QA.LAST_STATUS_PROP, status);
+    props.setProperty(JRBIA_QA.LAST_COUNT_PROP, String(issues.length));
+    props.setProperty(JRBIA_QA.LAST_RUN_PROP, new Date().toISOString());
+
+    return {
+      status,
+      functionName: 'JRBIA_qualityAuditDryRun',
+      mode: 'READ_ONLY',
+      message: 'issues=' + issues.length + ' ; P0=' + p0 + ' ; P1=' + p1,
+      issues
+    };
+  });
+}
+
+function JRBIA_qualityReportApply() {
+  return JRBIA_qualityAuditDryRun();
+}
+
+function JRBIA_QA_checkRepoSchema_(ss, issues) {
+  const rows = JRBIA_QA_rows_(ss, '🔗 Repos');
+  rows.forEach(item => {
+    const emoji = String(item.obj['Emoji'] || '');
+    if (!emoji || /^\d{4}-\d{2}-\d{2}/.test(emoji)) {
+      issues.push({
+        level: 'P0', code: 'REPO_ROW_SHIFT', sheet: '🔗 Repos', row: item.row,
+        message: 'Emoji invalide ou date détectée ; ligne probablement décalée.',
+        action: 'Réparer dans 📚 Portefeuille STAGING.'
+      });
+    }
+  });
+}
+
+function JRBIA_QA_checkPlanningSeal_(ss, issues) {
+  const sealed = JRBIA_QA_rows_(ss, '🧪 Gates').some(item =>
+    String(item.obj['Résultat'] || '').indexOf('OK_SEALED_JRBIA_AS_BACKUP') >= 0
+  );
+  if (!sealed) return;
+  JRBIA_QA_rows_(ss, '🗓️ Planning').forEach(item => {
+    const project = String(item.obj['Projet'] || '');
+    const status = String(item.obj['Statut'] || '');
+    if (project.indexOf('Sauvegarde Drive CLASP GitHub') >= 0 &&
+        ['Fait','Scellé','Prêt','Clôturé'].indexOf(status) < 0) {
+      issues.push({
+        level: 'P1', code: 'STALE_PLAN_AFTER_SEAL', sheet: '🗓️ Planning', row: item.row,
+        message: item.obj['Chantier'] + ' reste ' + status + ' alors que la chaîne est scellée.',
+        action: 'Archiver la ligne dans 🧭 Pilotage.'
+      });
+    }
+  });
+}
+
+function JRBIA_QA_checkPackDuplicates_(ss, issues) {
+  const groups = {};
+  JRBIA_QA_rows_(ss, '📦 Packs').forEach(item => {
+    const key = String(item.obj['Pack/Livrable'] || '');
+    if (!key) return;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item.row);
+  });
+  Object.keys(groups).forEach(key => {
+    if (groups[key].length > 1) issues.push({
+      level: 'P1', code: 'DUPLICATE_PACK', sheet: '📦 Packs',
+      message: key + ' apparaît aux lignes ' + groups[key].join(', '),
+      action: 'Canonicaliser dans 📦 Livrables & Versions.'
+    });
+  });
+}
+
+function JRBIA_QA_checkReleasePlaceholders_(ss, issues) {
+  JRBIA_QA_rows_(ss, '🧾 Releases').forEach(item => {
+    if (String(item.obj['Release/Tag'] || '') === 'À rapatrier') {
+      issues.push({
+        level: 'P1', code: 'RELEASE_PLACEHOLDER', sheet: '🧾 Releases', row: item.row,
+        message: item.obj['Projet'] + ' est un placeholder de rapatriement, pas une release.',
+        action: 'Reclasser vers 🗂️ Rapatriement / 🧭 Pilotage.'
+      });
+    }
+  });
+}
+
+function JRBIA_QA_checkReferenceCoverage_(ss, issues) {
+  const used = {};
+  [
+    ['📚 Projets','Statut'], ['🗂️ Rapatriement','Statut'], ['🧱 Décisions','Statut'],
+    ['📦 Packs','Statut'], ['🗓️ Planning','Statut'], ['💾 Sauvegardes','Statut']
+  ].forEach(pair => {
+    JRBIA_QA_rows_(ss, pair[0]).forEach(item => {
+      const value = String(item.obj[pair[1]] || '').trim();
+      if (value) used[value] = true;
+    });
+  });
+
+  const allowed = {};
+  const finalRefs = ss.getSheetByName('📋 Référentiels');
+  if (finalRefs) {
+    JRBIA_QA_rows_(ss, '📋 Référentiels').forEach(item => { if (item.obj['Valeur']) allowed[String(item.obj['Valeur']).trim()] = true; });
+  } else {
+  const sh = ss.getSheetByName('📋 Listes');
+  if (sh) {
+    const values = sh.getDataRange().getDisplayValues();
+    values.slice(1).forEach(row => row.forEach(value => {
+      if (value) allowed[String(value).trim()] = true;
+    }));
+  }
+  }
+
+  Object.keys(used).filter(value => !allowed[value]).forEach(value => {
+    issues.push({
+      level: 'P1', code: 'REFERENCE_MISSING', sheet: '📋 Listes',
+      message: 'Statut utilisé mais absent des référentiels: ' + value,
+      action: 'Ajouter à 📋 Référentiels ou normaliser.'
+    });
+  });
+}
+
+function JRBIA_QA_checkFormulaErrors_(ss, issues) {
+  ss.getSheets().forEach(sh => {
+    const range = sh.getDataRange();
+    const display = range.getDisplayValues();
+    display.forEach((row, r) => row.forEach((value, c) => {
+      if (/^#(REF!|VALUE!|N\/A|NAME\?|DIV\/0!)/.test(String(value || ''))) {
+        issues.push({
+          level: 'P0', code: 'FORMULA_ERROR', sheet: sh.getName(),
+          row: r + 1, message: range.getCell(r + 1, c + 1).getA1Notation() + '=' + value,
+          action: 'Corriger avant finalisation.'
+        });
+      }
+    }));
+  });
+}
+
+function JRBIA_QA_checkRequiredSheets_(ss, issues) {
+  const rationalized = ss.getSheetByName('📚 Portefeuille') && ss.getSheetByName('🧭 Pilotage');
+  const expected = rationalized
+    ? ['🎛️ Cockpit','📚 Portefeuille','🧭 Pilotage','🗂️ Rapatriement','📦 Livrables & Versions','🧾 Journal AS','⚙️ Gouvernance','🎨 Identité JRbIA','📋 Référentiels']
+    : ['🎛️ Cockpit','📚 Projets','🔗 Repos','🧪 Gates','🗂️ Rapatriement','🧱 Décisions','📦 Packs','🗓️ Planning','💾 Sauvegardes','🎨 Identité JRbIA'];
+  const names = ss.getSheets().map(sh => sh.getName());
+  expected.forEach(name => {
+    const archived = names.some(n => n.indexOf('🗄️ SOURCE — ' + name + ' — ') === 0);
+    if (!ss.getSheetByName(name) && !archived) issues.push({level:'P0',code:'MISSING_REQUIRED_SHEET',sheet:name,message:'Onglet attendu absent.',action:'Vé
