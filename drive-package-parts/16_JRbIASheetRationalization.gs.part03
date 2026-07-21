@@ -1,0 +1,187 @@
+s[0];
+  headers.forEach((category, col) => {
+    if (!category) return;
+    for (let row = 1; row < values.length; row++) {
+      const value = values[row][col];
+      if (!value) continue;
+      rows.push([
+        'REF-' + String(rows.length + 1).padStart(4, '0'), category, value,
+        'Oui', row, '', '📋 Listes', row + 1
+      ]);
+    }
+  });
+  JRBIA_RAT_writeTable_(ss, JRBIA_RAT.STAGING.REFERENCES, header, rows, true);
+  return rows.length;
+}
+
+/* ---------- Helpers ---------- */
+
+function JRBIA_RAT_ss_() {
+  const config = JRBIA_getConfig_({ allowMissingOptional: true });
+  if (!config.cockpitSpreadsheetId) throw new Error('JRBIA_COCKPIT_SPREADSHEET_ID manquant.');
+  return SpreadsheetApp.openById(config.cockpitSpreadsheetId);
+}
+
+function JRBIA_RAT_run_(functionName, mode, fn) {
+  const config = JRBIA_getConfig_({ allowMissingOptional: true });
+  const traceId = JRBIA_traceId_();
+  const started = Date.now();
+  try {
+    const result = fn() || {};
+    result.traceId = result.traceId || traceId;
+    result.functionName = result.functionName || functionName;
+    result.mode = result.mode || mode;
+    result.status = result.status || 'OK';
+    result.message = result.message || '';
+    result.durationMs = Date.now() - started;
+    JRBIA_log_(config, result);
+    return result;
+  } catch (err) {
+    const result = {
+      traceId, functionName, mode, status: 'ERROR',
+      message: err && err.message ? err.message : String(err),
+      durationMs: Date.now() - started
+    };
+    JRBIA_log_(config, result);
+    throw err;
+  }
+}
+
+function JRBIA_RAT_assertApproval_(approval) {
+  const props = PropertiesService.getScriptProperties();
+  if (!JRBIA_bool_(props.getProperty(JRBIA_RAT.BUILD_WRITE_PROP))) {
+    throw new Error(JRBIA_RAT.BUILD_WRITE_PROP + '=TRUE requis.');
+  }
+  if (props.getProperty(JRBIA_RAT.BUILD_APPROVAL_PROP) !== approval) {
+    throw new Error(JRBIA_RAT.BUILD_APPROVAL_PROP + '=' + approval + ' requis.');
+  }
+}
+
+function JRBIA_RAT_dataRows_(ss, sheetName) {
+  const sh = ss.getSheetByName(sheetName);
+  if (!sh) throw new Error('Onglet manquant: ' + sheetName);
+  const values = sh.getDataRange().getValues();
+  if (!values.length) return [];
+  const headers = values[0].map(x => String(x || '').trim());
+  const out = [];
+  for (let r = 1; r < values.length; r++) {
+    if (!values[r].some(v => v !== '' && v !== null)) continue;
+    const obj = {};
+    headers.forEach((h, c) => { if (h) obj[h] = values[r][c]; });
+    out.push({ row: r + 1, obj, raw: values[r] });
+  }
+  return out;
+}
+
+function JRBIA_RAT_writeTable_(ss, name, header, rows, hidden) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  sh.clear();
+  sh.getRange(1, 1, 1, header.length).setValues([header]);
+  if (rows.length) sh.getRange(2, 1, rows.length, header.length).setValues(rows);
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, 1, header.length)
+    .setFontWeight('bold').setBackground('#4472C4').setFontColor('#FFFFFF');
+  sh.getDataRange().setWrap(true).setVerticalAlignment('top');
+  sh.autoResizeColumns(1, Math.min(header.length, 20));
+  if (hidden) sh.hideSheet(); else sh.showSheet();
+}
+
+function JRBIA_RAT_requiredHeaders_(ss, sheetName, required, issues) {
+  const sh = ss.getSheetByName(sheetName);
+  if (!sh) {
+    issues.push({ level: 'P0', code: 'MISSING_SHEET', sheet: sheetName, message: 'Onglet absent.' });
+    return;
+  }
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0];
+  required.forEach(h => {
+    if (headers.indexOf(h) < 0) issues.push({
+      level: 'P0', code: 'MISSING_HEADER', sheet: sheetName, message: h
+    });
+  });
+}
+
+function JRBIA_RAT_findMalformedRepos_(ss) {
+  return JRBIA_RAT_dataRows_(ss, '🔗 Repos')
+    .filter(item => !JRBIA_RAT_isEmoji_(item.obj['Emoji']))
+    .map(item => ({ row: item.row, values: item.raw }));
+}
+
+function JRBIA_RAT_isEmoji_(value) {
+  const s = String(value || '').trim();
+  return !!s && !/^\d{4}-\d{2}-\d{2}/.test(s) && s.length <= 4;
+}
+
+function JRBIA_RAT_isBackupSealed_(ss) {
+  return JRBIA_RAT_dataRows_(ss, '🧪 Gates').some(item =>
+    String(item.obj['Résultat'] || '').indexOf('OK_SEALED_JRBIA_AS_BACKUP') >= 0
+  );
+}
+
+function JRBIA_RAT_findStalePlanning_(ss) {
+  if (!JRBIA_RAT_isBackupSealed_(ss)) return [];
+  return JRBIA_RAT_dataRows_(ss, '🗓️ Planning')
+    .filter(item =>
+      String(item.obj['Projet'] || '').indexOf('Sauvegarde Drive CLASP GitHub') >= 0 &&
+      ['Fait','Scellé','Prêt','Clôturé'].indexOf(String(item.obj['Statut'] || '')) < 0
+    )
+    .map(item => ({ row: item.row, chantier: item.obj['Chantier'], status: item.obj['Statut'] }));
+}
+
+function JRBIA_RAT_duplicatePackNames_(ss) {
+  const counts = {};
+  JRBIA_RAT_dataRows_(ss, '📦 Packs').forEach(item => {
+    const name = String(item.obj['Pack/Livrable'] || '');
+    if (!name) return;
+    counts[name] = (counts[name] || 0) + 1;
+  });
+  return Object.keys(counts).filter(name => counts[name] > 1);
+}
+
+function JRBIA_RAT_formulaErrors_(ss) {
+  const errors = [];
+  ss.getSheets().forEach(sh => {
+    const range = sh.getDataRange();
+    const values = range.getDisplayValues();
+    values.forEach((row, r) => row.forEach((value, c) => {
+      if (/^#(REF!|VALUE!|N\/A|NAME\?|DIV\/0!)/.test(String(value || ''))) {
+        errors.push(sh.getName() + '!' + range.getCell(r + 1, c + 1).getA1Notation() + '=' + value);
+      }
+    }));
+  });
+  return errors;
+}
+
+function JRBIA_RAT_statusScore_(status, url) {
+  const s = String(status || '').toUpperCase();
+  let score = url ? 20 : 0;
+  if (/SEALED|CLASSÉ|CLASSE|PASS|OK|READY|VALID/.test(s)) score += 50;
+  if (/PENDING|À FINALISER|A FINALISER|BLOQUÉ|BLOCKED|JAMAIS/.test(s)) score -= 20;
+  return score;
+}
+
+function JRBIA_RAT_key_(project, name, url) {
+  const u = String(url || '').trim().toLowerCase();
+  if (u) return 'url|' + u;
+  return [project || '', name || ''].map(x => String(x).trim().toLowerCase()).join('|');
+}
+
+function JRBIA_RAT_extractUrl_(value) {
+  const match = String(value || '').match(/https?:\/\/[^\s|]+/);
+  return match ? match[0] : '';
+}
+
+function JRBIA_RAT_extractTrace_(value) {
+  const match = String(value || '').match(/\b[0-9a-f]{8}\b/i);
+  return match ? match[0] : '';
+}
+
+function JRBIA_RAT_count_(ss, name) {
+  const sh = ss.getSheetByName(name);
+  return sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+}
+
+function JRBIA_RAT_backup_(ss, label) {
+  const file = DriveApp.getFileById(ss.getId());
+  const parents = file.getParents();
+  const folder = parents.hasNext() ? parents.next() : DriveAp
