@@ -1,0 +1,120 @@
+ss);
+  const candidates = rows.filter(x => {
+    if (['Fait','Scellé','Prêt','Clôturé'].indexOf(String(x['Statut'] || '')) >= 0) return false;
+    if (backupSealed && String(x['Projet'] || '').indexOf('Sauvegarde Drive CLASP GitHub') >= 0) return false;
+    return true;
+  });
+  candidates.sort((a, b) =>
+    JRBIA_DASH_priorityScore_(a['Priorité']) - JRBIA_DASH_priorityScore_(b['Priorité'])
+  );
+  const x = candidates[0] || {};
+  return {
+    subject: x['Chantier'] || 'Aucune action ouverte',
+    project: x['Projet'] || '',
+    priority: x['Priorité'] || '',
+    status: x['Statut'] || '',
+    owner: x['Owner'] || '',
+    next: x['Action'] || '',
+    evidence: x['Dépendance'] || ''
+  };
+}
+
+function JRBIA_DASH_priorityScore_(value) {
+  const s = String(value || '').toUpperCase();
+  if (s.indexOf('CRITIQUE') >= 0 || s === 'P0') return 0;
+  if (s.indexOf('HAUTE') >= 0 || s === 'P1') return 1;
+  if (s.indexOf('MOYENNE') >= 0 || s === 'P2') return 2;
+  return 3;
+}
+
+function JRBIA_DASH_countRows_(ss, sheetName, headerRow) {
+  const sh = ss.getSheetByName(sheetName);
+  if (!sh) return 0;
+  return Math.max(0, sh.getLastRow() - (headerRow || 1));
+}
+
+function JRBIA_DASH_countWhere_(ss, sheetName, field, values, headerRow, equals, exclusion) {
+  return JRBIA_DASH_rows_(ss, sheetName, headerRow || 1).filter(row => {
+    if (values.indexOf(String(row[field] || '')) < 0) return false;
+    if (equals && Object.keys(equals).some(k => String(row[k] || '') !== String(equals[k]))) return false;
+    if (exclusion && exclusion.excluded.indexOf(String(row[exclusion.field] || '')) >= 0) return false;
+    return true;
+  }).length;
+}
+
+
+function JRBIA_DASH_countOpenLegacyActions_(ss) {
+  const backupSealed = JRBIA_DASH_isBackupSealed_(ss);
+  return JRBIA_DASH_rows_(ss, '🗓️ Planning', 1).filter(row => {
+    if (['Fait','Scellé','Prêt','Clôturé'].indexOf(String(row['Statut'] || '')) >= 0) return false;
+    if (backupSealed && String(row['Projet'] || '').indexOf('Sauvegarde Drive CLASP GitHub') >= 0) return false;
+    return true;
+  }).length;
+}
+
+function JRBIA_DASH_isBackupSealed_(ss) {
+  return JRBIA_DASH_rows_(ss, '🧪 Gates', 1).some(row =>
+    String(row['Résultat'] || '').indexOf('OK_SEALED_JRBIA_AS_BACKUP') >= 0
+  );
+}
+
+function JRBIA_DASH_countNotIn_(ss, sheetName, field, excluded) {
+  return JRBIA_DASH_rows_(ss, sheetName, 1)
+    .filter(row => excluded.indexOf(String(row[field] || '')) < 0).length;
+}
+
+function JRBIA_DASH_countBlockingGatesLegacy_(ss) {
+  return JRBIA_DASH_rows_(ss, '🧪 Gates', 1).filter(row => {
+    const blocking = String(row['Blocking'] || '');
+    const result = String(row['Résultat'] || '');
+    return blocking === 'Oui' && !/(PASS|OK|SEALED|CLASSÉ)/i.test(result);
+  }).length;
+}
+
+function JRBIA_DASH_rows_(ss, sheetName, headerRow) {
+  const sh = ss.getSheetByName(sheetName);
+  if (!sh) return [];
+  const values = sh.getDataRange().getValues();
+  const hIndex = (headerRow || 1) - 1;
+  if (values.length <= hIndex) return [];
+  const headers = values[hIndex].map(x => String(x || '').trim());
+  const out = [];
+  for (let r = hIndex + 1; r < values.length; r++) {
+    if (!values[r].some(v => v !== '' && v !== null)) continue;
+    const obj = {};
+    headers.forEach((h, c) => { if (h) obj[h] = values[r][c]; });
+    out.push(obj);
+  }
+  return out;
+}
+
+function JRBIA_DASH_ss_() {
+  const config = JRBIA_getConfig_({ allowMissingOptional: true });
+  if (!config.cockpitSpreadsheetId) throw new Error('JRBIA_COCKPIT_SPREADSHEET_ID manquant.');
+  return SpreadsheetApp.openById(config.cockpitSpreadsheetId);
+}
+
+function JRBIA_DASH_run_(functionName, mode, fn) {
+  const config = JRBIA_getConfig_({ allowMissingOptional: true });
+  const traceId = JRBIA_traceId_();
+  const started = Date.now();
+  try {
+    const result = fn() || {};
+    result.traceId = traceId;
+    result.functionName = result.functionName || functionName;
+    result.mode = result.mode || mode;
+    result.status = result.status || 'OK';
+    result.message = result.message || '';
+    result.durationMs = Date.now() - started;
+    JRBIA_log_(config, result);
+    return result;
+  } catch (err) {
+    const result = {
+      traceId, functionName, mode, status: 'ERROR',
+      message: err && err.message ? err.message : String(err),
+      durationMs: Date.now() - started
+    };
+    JRBIA_log_(config, result);
+    throw err;
+  }
+}
