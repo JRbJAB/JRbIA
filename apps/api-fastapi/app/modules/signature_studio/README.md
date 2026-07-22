@@ -1,35 +1,15 @@
-# Backend scaffold — JRbIA Signature Studio
+# Backend — JRbIA Signature Studio
 
-Ce dossier réserve le bounded context FastAPI du module.
+Le bounded context exécutable initial est dans `app/signature_studio.py` pour garder le scaffold DEP-23 compact et contrôlable.
 
-## Sous-modules prévus
+Il fournit :
 
-```text
-router.py
-schemas.py
-service.py
-renderer.py
-sanitizer.py
-repository.py
-authorization.py
-exports.py
-audit.py
-```
+- profils de marque seedés ;
+- contrats Pydantic ;
+- moteur de rendu déterministe ;
+- sanitization par liste blanche ;
+- repository protocol ;
+- repository mémoire pour tests ;
+- service de bootstrap, aperçu, création et liste.
 
-## Responsabilités
-
-- vérifier le Firebase ID token ;
-- résoudre l'organisation et les entitlements ;
-- valider les profils de marque et collaborateurs ;
-- produire un rendu déterministe ;
-- assainir le HTML par liste blanche ;
-- versionner et approuver ;
-- produire les exports et empreintes ;
-- écrire les audit events.
-
-## Interdits
-
-- Aucun secret dans les réponses.
-- Aucun HTML arbitraire fourni par le client.
-- Aucun accès cross-tenant.
-- Aucun déploiement public dans ce lot.
+Le fichier sera découpé en `domain`, `renderer`, `repository`, `service`, `authorization`, `exports` et `audit` lorsque les contrats du scaffold auront été validés. Le repository Firestore concret est isolé dans `app/firestore.py`.

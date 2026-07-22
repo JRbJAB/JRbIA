@@ -1,0 +1,17 @@
+{
+  "name": "jrbia-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.14.0",
+  "workspaces": [
+    "apps/web-react",
+    "packages/shared"
+  ],
+  "scripts": {
+    "web:dev": "pnpm --filter @jrbia/web-react dev",
+    "web:build": "pnpm --filter @jrbia/web-react build",
+    "web:typecheck": "pnpm --filter @jrbia/web-react typecheck",
+    "api:test": "python -m pytest apps/api-fastapi/tests",
+    "check": "pnpm web:typecheck && python -m pytest apps/api-fastapi/tests"
+  }
+}
