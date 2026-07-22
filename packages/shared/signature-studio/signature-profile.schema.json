@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.jrbia.example/signature-profile.schema.json",
+  "title": "JRbIA Signature Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["brand", "person", "template_code", "image_mode"],
+  "properties": {
+    "brand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "display_name", "descriptor", "accent_color", "logo_asset_id"],
+      "properties": {
+        "product_id": { "type": ["string", "null"] },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "descriptor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "accent_color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "logo_asset_id": { "type": "string" },
+        "logo_url": { "type": ["string", "null"], "format": "uri" }
+      }
+    },
+    "person": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["full_name", "job_title", "email", "locale"],
+      "properties": {
+        "full_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "job_title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "email": { "type": "string", "format": "email" },
+        "phone_e164": {
+          "type": ["string", "null"],
+          "pattern": "^\\+[1-9][0-9]{7,14}$"
+        },
+        "website_url": { "type": ["string", "null"], "format": "uri" },
+        "locale": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 20
+        },
+        "social_links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "url"],
+            "properties": {
+              "kind": { "type": "string", "maxLength": 40 },
+              "url": { "type": "string", "format": "uri" }
+            }
+          }
+        }
+      }
+    },
+    "template_code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "image_mode": {
+      "type": "string",
+      "enum": ["hosted", "data_uri"]
+    },
+    "product_context": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "product_id": { "type": "string" },
+        "return_to": { "type": "string" }
+      }
+    }
+  }
+}
