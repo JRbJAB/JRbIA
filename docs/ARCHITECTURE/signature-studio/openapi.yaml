@@ -1,0 +1,516 @@
+openapi: 3.1.0
+info:
+  title: JRbIA Signature Studio API
+  version: 1.2.0-draft
+  description: Contrat draft du module Signature Studio. Aucun déploiement public n'est autorisé par ce document.
+servers:
+  - url: https://api.example.invalid
+    description: Placeholder non déployable
+security:
+  - firebaseBearer: []
+tags:
+  - name: catalog
+  - name: brands
+  - name: people
+  - name: signatures
+  - name: exports
+  - name: audit
+paths:
+  /api/v1/organizations/{organization_id}/catalog/tools:
+    get:
+      tags: [catalog]
+      operationId: listTools
+      summary: Liste les outils autorisés pour l'organisation
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: Catalogue filtré par entitlements
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ToolCatalogEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/organizations/{organization_id}/signature-studio/brand-profiles:
+    get:
+      tags: [brands]
+      operationId: listBrandProfiles
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: Profils actifs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BrandProfile' }
+    post:
+      tags: [brands]
+      operationId: createBrandProfile
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BrandProfileCreate' }
+      responses:
+        '201':
+          description: Profil créé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandProfile' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/organizations/{organization_id}/signature-studio/person-profiles:
+    get:
+      tags: [people]
+      operationId: listPersonProfiles
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: Profils collaborateurs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PersonProfile' }
+    post:
+      tags: [people]
+      operationId: createPersonProfile
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PersonProfileInput' }
+      responses:
+        '201':
+          description: Profil créé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PersonProfile' }
+  /api/v1/organizations/{organization_id}/signature-studio/preview:
+    post:
+      tags: [signatures]
+      operationId: previewSignature
+      summary: Produit un aperçu non persistant
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureRenderRequest' }
+      responses:
+        '200':
+          description: Aperçu assaini
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureRenderResponse' }
+  /api/v1/organizations/{organization_id}/signature-studio/signatures:
+    get:
+      tags: [signatures]
+      operationId: listSignatures
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/SignatureStatus' }
+      responses:
+        '200':
+          description: Signatures du tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Signature' }
+    post:
+      tags: [signatures]
+      operationId: createSignature
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignatureCreate' }
+      responses:
+        '201':
+          description: Brouillon créé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Signature' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/organizations/{organization_id}/signature-studio/signatures/{signature_id}:
+    get:
+      tags: [signatures]
+      operationId: getSignature
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/SignatureId'
+      responses:
+        '200':
+          description: Signature
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [signatures]
+      operationId: updateSignatureDraft
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/SignatureId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: '#/components/schemas/SignaturePatch' }
+      responses:
+        '200':
+          description: Brouillon modifié
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Signature' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/organizations/{organization_id}/signature-studio/signatures/{signature_id}/submit:
+    post:
+      tags: [signatures]
+      operationId: submitSignature
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/SignatureId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Signature soumise
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Signature' }
+  /api/v1/organizations/{organization_id}/signature-studio/signatures/{signature_id}/approve:
+    post:
+      tags: [signatures]
+      operationId: approveSignature
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/SignatureId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Version approuvée et immuable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureVersion' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/organizations/{organization_id}/signature-studio/signatures/{signature_id}/reject:
+    post:
+      tags: [signatures]
+      operationId: rejectSignature
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/SignatureId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 2000 }
+      responses:
+        '200':
+          description: Signature rejetée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Signature' }
+  /api/v1/organizations/{organization_id}/signature-studio/signatures/{signature_id}/exports:
+    post:
+      tags: [exports]
+      operationId: exportSignature
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/SignatureId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExportRequest' }
+      responses:
+        '201':
+          description: Export créé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExportArtifact' }
+  /api/v1/organizations/{organization_id}/signature-studio/bulk-jobs:
+    post:
+      tags: [exports]
+      operationId: createBulkJob
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkJobRequest' }
+      responses:
+        '202':
+          description: Lot accepté
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkJob' }
+        '429':
+          description: Quota dépassé
+  /api/v1/organizations/{organization_id}/signature-studio/audit-events:
+    get:
+      tags: [audit]
+      operationId: listAuditEvents
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - name: resource_type
+          in: query
+          schema: { type: string }
+        - name: resource_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Événements autorisés
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AuditEvent' }
+components:
+  securitySchemes:
+    firebaseBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase-ID-Token
+  parameters:
+    OrganizationId:
+      name: organization_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SignatureId:
+      name: signature_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128 }
+  responses:
+    Unauthorized: { description: Jeton absent ou invalide }
+    Forbidden: { description: Adhésion, rôle ou entitlement insuffisant }
+    NotFound: { description: Ressource absente ou masquée par anti-énumération }
+    Conflict: { description: Conflit d'état, de version ou d'idempotence }
+  schemas:
+    ToolCatalogEntry:
+      type: object
+      required: [tool_id, display_name, status, capabilities]
+      properties:
+        tool_id: { type: string }
+        display_name: { type: string }
+        status: { type: string, enum: [active, suspended, expired] }
+        plan_code: { type: string }
+        capabilities: { type: array, items: { type: string } }
+        quotas: { type: object, additionalProperties: true }
+        route: { type: string }
+    BrandProfileCreate:
+      type: object
+      required: [slug, display_name, descriptor, accent_color, logo_asset_id]
+      properties:
+        product_id: { type: [string, 'null'] }
+        slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        display_name: { type: string, minLength: 1, maxLength: 120 }
+        descriptor: { type: string, minLength: 1, maxLength: 240 }
+        accent_color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        logo_asset_id: { type: string, format: uuid }
+        inverse_logo_asset_id: { type: [string, 'null'], format: uuid }
+    BrandProfile:
+      allOf:
+        - $ref: '#/components/schemas/BrandProfileCreate'
+        - type: object
+          required: [id, organization_id, version, status]
+          properties:
+            id: { type: string, format: uuid }
+            organization_id: { type: string, format: uuid }
+            version: { type: integer, minimum: 1 }
+            status: { type: string, enum: [draft, active, archived] }
+    PersonProfileInput:
+      type: object
+      required: [full_name, job_title, email, locale]
+      properties:
+        full_name: { type: string, minLength: 1, maxLength: 160 }
+        job_title: { type: string, minLength: 1, maxLength: 160 }
+        email: { type: string, format: email }
+        phone_e164: { type: [string, 'null'], pattern: '^\+[1-9][0-9]{7,14}$' }
+        website_url: { type: [string, 'null'], format: uri }
+        locale: { type: string, minLength: 2, maxLength: 20 }
+        social_links:
+          type: array
+          items:
+            type: object
+            required: [kind, url]
+            properties:
+              kind: { type: string }
+              url: { type: string, format: uri }
+    PersonProfile:
+      allOf:
+        - $ref: '#/components/schemas/PersonProfileInput'
+        - type: object
+          required: [id, organization_id, status]
+          properties:
+            id: { type: string, format: uuid }
+            organization_id: { type: string, format: uuid }
+            status: { type: string, enum: [active, inactive] }
+    SignatureStatus:
+      type: string
+      enum: [draft, in_review, approved, rejected, published, archived]
+    SignatureRenderRequest:
+      type: object
+      required: [brand_profile_id, template_code, person]
+      properties:
+        brand_profile_id: { type: string, format: uuid }
+        template_code: { type: string }
+        image_mode: { type: string, enum: [hosted, data_uri], default: hosted }
+        person: { $ref: '#/components/schemas/PersonProfileInput' }
+        product_context:
+          type: [object, 'null']
+          properties:
+            product_id: { type: string }
+            return_to: { type: string }
+    SignatureRenderResponse:
+      type: object
+      required: [html, text, render_hash, warnings, engine_version]
+      properties:
+        html: { type: string }
+        text: { type: string }
+        render_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        engine_version: { type: string }
+        warnings: { type: array, items: { type: string } }
+        compatibility: { type: object, additionalProperties: true }
+    SignatureCreate:
+      type: object
+      required: [brand_profile_id, template_code, person_profile_id]
+      properties:
+        brand_profile_id: { type: string, format: uuid }
+        template_code: { type: string }
+        person_profile_id: { type: string, format: uuid }
+        source_product_id: { type: [string, 'null'] }
+    SignaturePatch:
+      type: object
+      properties:
+        brand_profile_id: { type: string, format: uuid }
+        template_code: { type: string }
+        person_profile_id: { type: string, format: uuid }
+    Signature:
+      type: object
+      required: [id, organization_id, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        person_profile_id: { type: string, format: uuid }
+        brand_profile_id: { type: string, format: uuid }
+        template_code: { type: string }
+        status: { $ref: '#/components/schemas/SignatureStatus' }
+        current_version_id: { type: [string, 'null'], format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    SignatureDetail:
+      allOf:
+        - $ref: '#/components/schemas/Signature'
+        - type: object
+          properties:
+            person: { $ref: '#/components/schemas/PersonProfile' }
+            brand: { $ref: '#/components/schemas/BrandProfile' }
+            versions: { type: array, items: { $ref: '#/components/schemas/SignatureVersion' } }
+    SignatureVersion:
+      type: object
+      required: [id, signature_id, version_number, rendered_html, rendered_text, render_hash, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        signature_id: { type: string, format: uuid }
+        version_number: { type: integer, minimum: 1 }
+        rendered_html: { type: string }
+        rendered_text: { type: string }
+        render_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        created_at: { type: string, format: date-time }
+        approved_by: { type: [string, 'null'] }
+        approved_at: { type: [string, 'null'], format: date-time }
+    ExportRequest:
+      type: object
+      required: [format]
+      properties:
+        format: { type: string, enum: [html, text, zip] }
+        image_mode: { type: string, enum: [hosted, data_uri], default: hosted }
+    ExportArtifact:
+      type: object
+      required: [id, format, mime_type, byte_size, sha256, download_url]
+      properties:
+        id: { type: string, format: uuid }
+        format: { type: string, enum: [html, text, zip] }
+        mime_type: { type: string }
+        byte_size: { type: integer, minimum: 0 }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        download_url: { type: string, format: uri }
+        expires_at: { type: [string, 'null'], format: date-time }
+    BulkJobRequest:
+      type: object
+      required: [brand_profile_id, template_code, person_profile_ids]
+      properties:
+        brand_profile_id: { type: string, format: uuid }
+        template_code: { type: string }
+        person_profile_ids:
+          type: array
+          minItems: 1
+          items: { type: string, format: uuid }
+    BulkJob:
+      type: object
+      required: [id, status, requested_count, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, completed, failed, cancelled] }
+        requested_count: { type: integer, minimum: 1 }
+        success_count: { type: integer, minimum: 0 }
+        failure_count: { type: integer, minimum: 0 }
+        export_artifact_id: { type: [string, 'null'], format: uuid }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+    AuditEvent:
+      type: object
+      required: [id, organization_id, actor_user_id, action, resource_type, resource_id, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        actor_user_id: { type: string }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        request_id: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        occurred_at: { type: string, format: date-time }

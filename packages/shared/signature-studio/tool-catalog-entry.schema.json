@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.jrbia.example/tool-catalog-entry.schema.json",
+  "title": "JRbIA Tool Catalog Entry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tool_id",
+    "display_name",
+    "route",
+    "status",
+    "capabilities",
+    "commercial"
+  ],
+  "properties": {
+    "tool_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "route": {
+      "type": "string",
+      "pattern": "^/admin/tools/"
+    },
+    "icon_asset_id": {
+      "type": ["string", "null"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "active", "retired"]
+    },
+    "version": {
+      "type": "string"
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string" }
+    },
+    "commercial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sellable", "bundle_eligible"],
+      "properties": {
+        "sellable": { "type": "boolean" },
+        "bundle_eligible": { "type": "boolean" },
+        "default_plan_code": { "type": ["string", "null"] },
+        "metered_capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deep_link_params": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "source_products": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "return_to_allowed_prefixes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}
