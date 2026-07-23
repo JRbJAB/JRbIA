@@ -31,7 +31,7 @@ export function PlatformProvider({ children }: { children: ReactNode }) {
   );
 
   const membershipsQuery = useQuery({
-    queryKey: ["memberships", auth.user?.uid],
+    queryKey: ["memberships", auth.user?.id],
     enabled: auth.status === "authenticated",
     queryFn: () => api.get<OrganizationMembership[]>("/api/v1/me/organizations"),
     staleTime: 60_000,
@@ -102,7 +102,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return (
       <main className="centered panel">
         <h1>Connexion requise</h1>
-        <p>Firebase Auth doit être raccordé au shell avant toute utilisation.</p>
+        <p>Connectez-vous avec Supabase Auth pour accéder au cockpit.</p>
       </main>
     );
   }
