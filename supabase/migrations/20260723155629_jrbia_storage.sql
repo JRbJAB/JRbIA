@@ -30,7 +30,7 @@ using (
 );
 
 -- Uploads are restricted to owners/admins. The caller identity is resolved
--- from the Firebase JWT trusted through Supabase Third-Party Auth.
+-- from the native Supabase Auth JWT.
 create policy jrbia_storage_insert_admin
 on storage.objects for insert to authenticated
 with check (
