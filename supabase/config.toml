@@ -12,8 +12,8 @@ major_version = 17
 [auth]
 enabled = true
 
-# Hosted project: configure Authentication > Third-Party Auth > Firebase.
-# The Firebase JWT must carry role=authenticated. Do not commit project secrets.
+# Hosted project: native Supabase Auth is the sole identity provider.
+# Configure only reviewed redirect URLs. Do not commit project secrets.
 
 [storage]
 enabled = true
