@@ -12,19 +12,15 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     data_backend: Literal["supabase", "firestore"] = "supabase"
 
-    # Authentication remains Firebase for the first commercial slice. Supabase
-    # trusts Firebase JWTs through Third-Party Auth; the publishable key is not a secret.
-    firebase_project_id: str | None = None
-    firebase_check_revoked: bool = True
-
-    # Supabase Data API. The backend forwards the verified caller JWT so RLS remains active.
+    # Supabase Auth and Data API share the project URL and publishable key.
+    # The backend forwards the native caller JWT so RLS remains active.
     supabase_url: AnyHttpUrl | None = None
     supabase_publishable_key: str | None = None
     supabase_schema: str = "public"
     supabase_storage_bucket: str = "jrbia-brand-assets"
     supabase_timeout_seconds: float = 10.0
 
-    # Legacy fallback kept behind the repository boundary during migration.
+    # Legacy persistence rollback only; Firebase Auth is not part of the target architecture.
     google_cloud_project: str | None = None
     firestore_database: str = "(default)"
 
