@@ -1,5 +1,5 @@
 -- JRbIA platform core — Supabase/Postgres MVP
--- Firebase Auth is trusted through Supabase Third-Party Auth.
+-- Native Supabase Auth issues the JWT used by Postgres RLS.
 -- Every exposed table uses RLS; anon receives no application access.
 
 create extension if not exists pgcrypto;
