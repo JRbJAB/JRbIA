@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api import Services, build_api_router
-from .auth import FirebaseTokenVerifier
+from .auth import SupabaseTokenVerifier
 from .config import Settings, get_settings
 from .firestore import (
     FirestoreEntitlementRepository,
@@ -54,7 +54,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         brands = seed_brand_profiles(str(settings.asset_base_url))
         signatures = SignatureService(signatures_repository, SignatureRenderer(brands), brands)
         services = Services(
-            token_verifier=FirebaseTokenVerifier(settings),
+            token_verifier=SupabaseTokenVerifier(settings),
             platform=platform,
             signatures=signatures,
         )
