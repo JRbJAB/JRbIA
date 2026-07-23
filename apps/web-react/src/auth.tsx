@@ -1,6 +1,5 @@
+import { createClient, type Session, type User } from "@supabase/supabase-js";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { getApp, getApps, initializeApp, type FirebaseOptions } from "firebase/app";
-import { getAuth, getIdToken, onAuthStateChanged, type User } from "firebase/auth";
 
 interface AuthState {
   status: "loading" | "locked" | "authenticated" | "signed_out";
@@ -11,61 +10,61 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
-function readFirebaseOptions(): FirebaseOptions | null {
-  const options: FirebaseOptions = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  };
-
-  if (!options.apiKey || !options.authDomain || !options.projectId || !options.appId) {
-    return null;
-  }
-  return options;
+function createSupabaseClient() {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !publishableKey) return null;
+  return createClient(url, publishableKey, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
 }
 
-export function FirebaseAuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
+  const client = useMemo(createSupabaseClient, []);
+  const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<AuthState["status"]>("loading");
   const [reason, setReason] = useState<string>();
 
   useEffect(() => {
-    const options = readFirebaseOptions();
-    if (!options) {
-      setReason("Configuration Firebase absente : le client reste verrouillé par défaut.");
+    if (!client) {
+      setReason("Configuration Supabase absente : le client reste verrouillé par défaut.");
       setStatus("locked");
       return;
     }
 
-    const app = getApps().length ? getApp() : initializeApp(options);
-    const auth = getAuth(app);
-    return onAuthStateChanged(
-      auth,
-      (nextUser) => {
-        setUser(nextUser);
-        setStatus(nextUser ? "authenticated" : "signed_out");
-      },
-      (error) => {
+    let active = true;
+    void client.auth.getSession().then(({ data, error }) => {
+      if (!active) return;
+      if (error) {
         setReason(error.message);
         setStatus("locked");
-      },
-    );
-  }, []);
+        return;
+      }
+      setSession(data.session);
+      setStatus(data.session ? "authenticated" : "signed_out");
+    });
+
+    const { data } = client.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setStatus(nextSession ? "authenticated" : "signed_out");
+    });
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, [client]);
 
   const value = useMemo<AuthState>(
     () => ({
       status,
-      user,
+      user: session?.user ?? null,
       reason,
       getToken: async () => {
-        if (!user) {
-          throw new Error("Aucun utilisateur Firebase authentifié.");
-        }
-        return getIdToken(user, false);
+        if (!session?.access_token) throw new Error("Aucune session Supabase authentifiée.");
+        return session.access_token;
       },
     }),
-    [reason, status, user],
+    [reason, session, status],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -73,8 +72,6 @@ export function FirebaseAuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthState {
   const value = useContext(AuthContext);
-  if (!value) {
-    throw new Error("useAuth doit être utilisé dans FirebaseAuthProvider.");
-  }
+  if (!value) throw new Error("useAuth doit être utilisé dans SupabaseAuthProvider.");
   return value;
 }
