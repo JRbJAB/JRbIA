@@ -119,3 +119,38 @@ def test_http_auth_and_catalog(services):
     assert response.json()[0]["toolId"] == "signature-studio"
     cross_tenant = client.get("/api/v1/organizations/org-b/catalog/tools", headers={"Authorization": "Bearer token-a"})
     assert cross_tenant.status_code == 403
+
+
+def test_supabase_is_the_default_backend():
+    settings = Settings(app_env="test")
+    assert settings.data_backend == "supabase"
+    assert settings.supabase_storage_bucket == "jrbia-brand-assets"
+
+
+@pytest.mark.asyncio
+async def test_principal_keeps_token_out_of_serialized_payload(services):
+    principal = await services.platform.principal("user-a", access_token="firebase-jwt")
+    assert principal.access_token == "firebase-jwt"
+    assert "access_token" not in principal.model_dump()
+
+
+def test_supabase_migrations_are_rls_first_and_storage_private():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    core = (root / "supabase/migrations/20260723000100_jrbia_platform_core.sql").read_text()
+    storage = (root / "supabase/migrations/20260723000200_jrbia_storage.sql").read_text()
+
+    for table in (
+        "organizations",
+        "organization_memberships",
+        "organization_entitlements",
+        "signatures",
+    ):
+        assert f"alter table public.{table} enable row level security" in core
+        assert f"revoke all on public.{table} from anon" in core
+    assert "created_by = public.jwt_subject()" in core
+    assert "'jrbia-brand-assets'" in storage
+    assert "false," in storage
+    assert "storage.foldername(name)" in storage
+    assert "m.role in ('owner','admin')" in storage

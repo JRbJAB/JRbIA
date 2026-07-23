@@ -1,0 +1,20 @@
+project_id = "jrbia-platform"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+major_version = 17
+
+[auth]
+enabled = true
+
+# Hosted project: configure Authentication > Third-Party Auth > Firebase.
+# The Firebase JWT must carry role=authenticated. Do not commit project secrets.
+
+[storage]
+enabled = true
+file_size_limit = "20MiB"

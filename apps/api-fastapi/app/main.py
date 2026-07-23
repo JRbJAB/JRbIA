@@ -14,6 +14,12 @@ from .firestore import (
     FirestoreSignatureRepository,
 )
 from .platform import PlatformService
+from .supabase import (
+    SupabaseDataApi,
+    SupabaseEntitlementRepository,
+    SupabaseMembershipRepository,
+    SupabaseSignatureRepository,
+)
 from .signature_studio import SignatureRenderer, SignatureService, seed_brand_profiles
 
 
@@ -34,10 +40,16 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     )
 
     if services is None:
-        firestore = FirestoreProvider(settings)
-        memberships = FirestoreMembershipRepository(firestore)
-        entitlements = FirestoreEntitlementRepository(firestore)
-        signatures_repository = FirestoreSignatureRepository(firestore)
+        if settings.data_backend == "supabase":
+            supabase = SupabaseDataApi(settings)
+            memberships = SupabaseMembershipRepository(supabase)
+            entitlements = SupabaseEntitlementRepository(supabase)
+            signatures_repository = SupabaseSignatureRepository(supabase)
+        else:
+            firestore = FirestoreProvider(settings)
+            memberships = FirestoreMembershipRepository(firestore)
+            entitlements = FirestoreEntitlementRepository(firestore)
+            signatures_repository = FirestoreSignatureRepository(firestore)
         platform = PlatformService(memberships, entitlements)
         brands = seed_brand_profiles(str(settings.asset_base_url))
         signatures = SignatureService(signatures_repository, SignatureRenderer(brands), brands)

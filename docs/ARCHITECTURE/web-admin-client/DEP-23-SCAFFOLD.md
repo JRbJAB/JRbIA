@@ -22,7 +22,9 @@ Scaffold d’implémentation initial. Aucun runtime hébergé et aucun déploiem
 - vérification Firebase ID token ;
 - résolutions membership, tenant et entitlement côté serveur ;
 - plans Starter, Pro, Organisation ;
-- repositories Firestore derrière protocoles ;
+- repositories Supabase Postgres/Data API derrière protocoles ;
+- Firestore conservé uniquement comme adaptateur de rollback temporaire ;
+- migrations SQL, RLS et configuration Storage versionnées dans `supabase/` ;
 - endpoints catalogue, bootstrap, aperçu, liste et création ;
 - rendu déterministe, HTML assaini, images HTTPS par défaut ;
 - idempotence de création ;
@@ -41,3 +43,12 @@ Scaffold d’implémentation initial. Aucun runtime hébergé et aucun déploiem
 ## Prochaine tranche
 
 Après revue du scaffold : implémenter le workflow `DRAFT -> IN_REVIEW -> APPROVED`, les versions immuables, l’audit append-only, les brand assets contrôlés et la génération d’exports.
+
+
+## Révision Supabase
+
+- Supabase Postgres remplace Firestore comme backend par défaut.
+- Firebase Auth est conservé et relié par Supabase Third-Party Auth.
+- Les repositories Supabase utilisent la Data API avec le JWT utilisateur et la publishable key, afin de conserver RLS.
+- Les migrations et politiques RLS sont versionnées dans `supabase/`.
+- Le bucket `jrbia-brand-assets` reste privé jusqu'à validation de ses politiques.

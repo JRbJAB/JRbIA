@@ -34,6 +34,7 @@ class Principal(BaseModel):
     user_id: str
     email: str | None = None
     memberships: dict[str, Membership]
+    access_token: str | None = Field(default=None, exclude=True, repr=False)
 
 
 class CatalogTool(BaseModel):
@@ -127,13 +128,17 @@ TOOL_CATALOG: list[CatalogTool] = [
 
 
 class MembershipRepository(Protocol):
-    async def list_for_user(self, user_id: str) -> list[Membership]: ...
+    async def list_for_user(self, user_id: str, access_token: str | None = None) -> list[Membership]: ...
 
 
 class EntitlementRepository(Protocol):
-    async def get(self, organization_id: str, tool_id: str) -> OrganizationEntitlement | None: ...
+    async def get(
+        self, organization_id: str, tool_id: str, access_token: str | None = None
+    ) -> OrganizationEntitlement | None: ...
 
-    async def list_for_organization(self, organization_id: str) -> list[OrganizationEntitlement]: ...
+    async def list_for_organization(
+        self, organization_id: str, access_token: str | None = None
+    ) -> list[OrganizationEntitlement]: ...
 
 
 class AuthorizationDenied(RuntimeError):
@@ -153,9 +158,18 @@ class PlatformService:
         self._memberships = memberships
         self._entitlements = entitlements
 
-    async def principal(self, user_id: str, email: str | None = None) -> Principal:
-        memberships = [m for m in await self._memberships.list_for_user(user_id) if m.status == "active"]
-        return Principal(user_id=user_id, email=email, memberships={m.organization_id: m for m in memberships})
+    async def principal(
+        self, user_id: str, email: str | None = None, access_token: str | None = None
+    ) -> Principal:
+        memberships = [
+            m for m in await self._memberships.list_for_user(user_id, access_token) if m.status == "active"
+        ]
+        return Principal(
+            user_id=user_id,
+            email=email,
+            memberships={m.organization_id: m for m in memberships},
+            access_token=access_token,
+        )
 
     def assert_membership(self, principal: Principal, organization_id: str) -> Membership:
         membership = principal.memberships.get(organization_id)
@@ -163,8 +177,10 @@ class PlatformService:
             raise AuthorizationDenied("Organization membership required")
         return membership
 
-    async def resolve_entitlement(self, organization_id: str, tool_id: str) -> EntitlementDecision:
-        entitlement = await self._entitlements.get(organization_id, tool_id)
+    async def resolve_entitlement(
+        self, organization_id: str, tool_id: str, access_token: str | None = None
+    ) -> EntitlementDecision:
+        entitlement = await self._entitlements.get(organization_id, tool_id, access_token)
         if not entitlement or entitlement.status not in {"trial", "active"}:
             raise AuthorizationDenied("Tool entitlement required")
         plan = PLAN_DEFINITIONS.get(entitlement.plan_code)
@@ -176,14 +192,20 @@ class PlatformService:
 
     async def require_capability(self, principal: Principal, organization_id: str, tool_id: str, capability: str) -> EntitlementDecision:
         self.assert_membership(principal, organization_id)
-        decision = await self.resolve_entitlement(organization_id, tool_id)
+        decision = await self.resolve_entitlement(organization_id, tool_id, principal.access_token)
         if capability not in decision.capabilities:
             raise AuthorizationDenied(f"Capability required: {capability}")
         return decision
 
     async def list_catalog(self, principal: Principal, organization_id: str) -> list[CatalogTool]:
         self.assert_membership(principal, organization_id)
-        entitlements = {item.tool_id: item for item in await self._entitlements.list_for_organization(organization_id) if item.status in {"trial", "active"}}
+        entitlements = {
+            item.tool_id: item
+            for item in await self._entitlements.list_for_organization(
+                organization_id, principal.access_token
+            )
+            if item.status in {"trial", "active"}
+        }
         result: list[CatalogTool] = []
         for tool in TOOL_CATALOG:
             entitlement = entitlements.get(tool.toolId)
@@ -199,7 +221,7 @@ class InMemoryMembershipRepository:
     def __init__(self, memberships: list[Membership]) -> None:
         self._memberships = memberships
 
-    async def list_for_user(self, user_id: str) -> list[Membership]:
+    async def list_for_user(self, user_id: str, access_token: str | None = None) -> list[Membership]:
         return [membership for membership in self._memberships if membership.user_id == user_id]
 
 
@@ -207,8 +229,12 @@ class InMemoryEntitlementRepository:
     def __init__(self, entitlements: list[OrganizationEntitlement]) -> None:
         self._entitlements = entitlements
 
-    async def get(self, organization_id: str, tool_id: str) -> OrganizationEntitlement | None:
+    async def get(
+        self, organization_id: str, tool_id: str, access_token: str | None = None
+    ) -> OrganizationEntitlement | None:
         return next((e for e in self._entitlements if e.organization_id == organization_id and e.tool_id == tool_id), None)
 
-    async def list_for_organization(self, organization_id: str) -> list[OrganizationEntitlement]:
+    async def list_for_organization(
+        self, organization_id: str, access_token: str | None = None
+    ) -> list[OrganizationEntitlement]:
         return [e for e in self._entitlements if e.organization_id == organization_id]

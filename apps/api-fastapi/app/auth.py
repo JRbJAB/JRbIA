@@ -56,6 +56,10 @@ class FirebaseTokenVerifier:
         user_id = decoded.get("uid") or decoded.get("sub")
         if not user_id:
             raise AuthenticationError("Token has no user identifier")
+        # Supabase Third-Party Auth expects the Firebase token to carry the
+        # authenticated Postgres role. Fail closed before querying the Data API.
+        if decoded.get("role") != "authenticated":
+            raise AuthenticationError("Firebase token is missing role=authenticated for Supabase")
         return Identity(user_id=str(user_id), email=decoded.get("email"))
 
 

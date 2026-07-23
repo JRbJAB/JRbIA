@@ -32,7 +32,7 @@ class FirestoreMembershipRepository:
     def __init__(self, provider: FirestoreProvider) -> None:
         self._provider = provider
 
-    async def list_for_user(self, user_id: str) -> list[Membership]:
+    async def list_for_user(self, user_id: str, access_token: str | None = None) -> list[Membership]:
         query = (
             self._provider.client().collection("organization_memberships")
             .where("user_id", "==", user_id)
@@ -57,13 +57,17 @@ class FirestoreEntitlementRepository:
     def __init__(self, provider: FirestoreProvider) -> None:
         self._provider = provider
 
-    async def get(self, organization_id: str, tool_id: str) -> OrganizationEntitlement | None:
+    async def get(
+        self, organization_id: str, tool_id: str, access_token: str | None = None
+    ) -> OrganizationEntitlement | None:
         snapshot = await self._provider.client().collection("organization_entitlements").document(f"{organization_id}__{tool_id}").get()
         if not snapshot.exists:
             return None
         return OrganizationEntitlement.model_validate(snapshot.to_dict())
 
-    async def list_for_organization(self, organization_id: str) -> list[OrganizationEntitlement]:
+    async def list_for_organization(
+        self, organization_id: str, access_token: str | None = None
+    ) -> list[OrganizationEntitlement]:
         query = self._provider.client().collection("organization_entitlements").where("organization_id", "==", organization_id)
         result: list[OrganizationEntitlement] = []
         async for snapshot in query.stream():
@@ -78,7 +82,12 @@ class FirestoreSignatureRepository:
     def _collection(self, organization_id: str):
         return self._provider.client().collection("organizations").document(organization_id).collection("signatures")
 
-    async def create(self, record: SignatureRecord, idempotency_key: str | None) -> SignatureRecord:
+    async def create(
+        self,
+        record: SignatureRecord,
+        idempotency_key: str | None,
+        access_token: str | None = None,
+    ) -> SignatureRecord:
         if idempotency_key:
             key_digest = hashlib.sha256(f"{record.organizationId}:{idempotency_key}".encode("utf-8")).hexdigest()
             key_ref = self._provider.client().collection("idempotency_keys").document(key_digest)
@@ -93,7 +102,9 @@ class FirestoreSignatureRepository:
             await key_ref.set({"organization_id": record.organizationId, "signature_id": record.id})
         return record
 
-    async def list(self, organization_id: str) -> list[SignatureRecord]:
+    async def list(
+        self, organization_id: str, access_token: str | None = None
+    ) -> list[SignatureRecord]:
         result: list[SignatureRecord] = []
         async for snapshot in self._collection(organization_id).order_by("createdAt", direction="DESCENDING").limit(100).stream():
             result.append(SignatureRecord.model_validate(snapshot.to_dict()))

@@ -36,7 +36,7 @@ async def get_principal(
     token = authorization.removeprefix("Bearer ").strip()
     try:
         identity = await services.token_verifier.verify(token)
-        return await services.platform.principal(identity.user_id, identity.email)
+        return await services.platform.principal(identity.user_id, identity.email, token)
     except AuthenticationError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
@@ -113,7 +113,7 @@ def build_api_router() -> APIRouter:
             await services.platform.require_capability(
                 principal, organization_id, "signature-studio", CAPABILITIES["read"]
             )
-            return await services.signatures.list(organization_id)
+            return await services.signatures.list(organization_id, principal.access_token)
         except AuthorizationDenied as exc:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied") from exc
 

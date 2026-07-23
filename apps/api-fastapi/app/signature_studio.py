@@ -96,9 +96,16 @@ class SignatureRecord(BaseModel):
 
 
 class SignatureRepository(Protocol):
-    async def create(self, record: SignatureRecord, idempotency_key: str | None) -> SignatureRecord: ...
+    async def create(
+        self,
+        record: SignatureRecord,
+        idempotency_key: str | None,
+        access_token: str | None = None,
+    ) -> SignatureRecord: ...
 
-    async def list(self, organization_id: str) -> list[SignatureRecord]: ...
+    async def list(
+        self, organization_id: str, access_token: str | None = None
+    ) -> list[SignatureRecord]: ...
 
 
 class InMemorySignatureRepository:
@@ -106,7 +113,12 @@ class InMemorySignatureRepository:
         self._records: dict[tuple[str, str], SignatureRecord] = {}
         self._idempotency: dict[tuple[str, str], str] = {}
 
-    async def create(self, record: SignatureRecord, idempotency_key: str | None) -> SignatureRecord:
+    async def create(
+        self,
+        record: SignatureRecord,
+        idempotency_key: str | None,
+        access_token: str | None = None,
+    ) -> SignatureRecord:
         if idempotency_key:
             previous_id = self._idempotency.get((record.organizationId, idempotency_key))
             if previous_id:
@@ -115,7 +127,9 @@ class InMemorySignatureRepository:
         self._records[(record.organizationId, record.id)] = record
         return record
 
-    async def list(self, organization_id: str) -> list[SignatureRecord]:
+    async def list(
+        self, organization_id: str, access_token: str | None = None
+    ) -> list[SignatureRecord]:
         return [record for (org_id, _), record in self._records.items() if org_id == organization_id]
 
 
@@ -225,7 +239,9 @@ class SignatureService:
             createdAt=now,
             updatedAt=now,
         )
-        return await self._repository.create(record, idempotency_key)
+        return await self._repository.create(record, idempotency_key, principal.access_token)
 
-    async def list(self, organization_id: str) -> list[SignatureRecord]:
-        return await self._repository.list(organization_id)
+    async def list(
+        self, organization_id: str, access_token: str | None = None
+    ) -> list[SignatureRecord]:
+        return await self._repository.list(organization_id, access_token)
