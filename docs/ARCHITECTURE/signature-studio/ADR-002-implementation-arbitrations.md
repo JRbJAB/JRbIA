@@ -16,7 +16,7 @@
 
 - Le domaine reste indépendant du SDK de persistance grâce aux repositories.
 - Supabase RLS constitue une seconde barrière d’isolation tenant en plus des contrôles FastAPI.
-- Firebase Auth reste le fournisseur d’identité initial et ses JWT sont reconnus par Supabase Third-Party Auth.
+- Supabase Auth natif porte l’identité et fournit les JWT évalués par les politiques RLS.
 - Le client React n’embarque aucun logo en dur et n’est jamais source d’autorité pour les droits.
 - Les routes sont tenant-scoped et le tenant est vérifié côté FastAPI et côté base.
 - Le catalogue d’outils est filtré par entitlements ; un outil non souscrit n’est ni affiché ni accessible par URL directe.
