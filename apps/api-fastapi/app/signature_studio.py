@@ -8,10 +8,7 @@ from typing import Protocol
 from uuid import uuid4
 
 import bleach
-try:
-    from bleach.css_sanitizer import CSSSanitizer
-except ModuleNotFoundError:  # Bleach < 5, kept for local QA compatibility
-    CSSSanitizer = None  # type: ignore[assignment,misc]
+from bleach.css_sanitizer import CSSSanitizer
 from pydantic import BaseModel, EmailStr, Field, HttpUrl
 
 from .platform import EntitlementDecision, Principal, PRODUCT_INTEGRATION_ORDER
@@ -37,11 +34,7 @@ ALLOWED_CSS_PROPERTIES = [
     "vertical-align",
     "width",
 ]
-CSS_SANITIZER = (
-    CSSSanitizer(allowed_css_properties=ALLOWED_CSS_PROPERTIES)
-    if CSSSanitizer is not None
-    else None
-)
+CSS_SANITIZER = CSSSanitizer(allowed_css_properties=ALLOWED_CSS_PROPERTIES)
 ALLOWED_ATTRIBUTES = {
     "*": ["style"],
     "a": ["href", "title"],
@@ -179,10 +172,7 @@ class SignatureRenderer:
             "protocols": ["https", "mailto", "tel"],
             "strip": True,
         }
-        if CSS_SANITIZER is not None:
-            clean_options["css_sanitizer"] = CSS_SANITIZER
-        else:
-            clean_options["styles"] = ALLOWED_CSS_PROPERTIES
+        clean_options["css_sanitizer"] = CSS_SANITIZER
         sanitized = bleach.clean(html, **clean_options)
         canonical = json.dumps(
             {"engine": ENGINE_VERSION, "request": request.model_dump(mode="json"), "brand": brand.model_dump(mode="json")},

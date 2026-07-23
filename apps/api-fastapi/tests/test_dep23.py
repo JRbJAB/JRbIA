@@ -140,6 +140,9 @@ def test_supabase_migrations_are_rls_first_and_storage_private():
     root = Path(__file__).resolve().parents[3]
     core = (root / "supabase/migrations/20260723155545_jrbia_platform_core.sql").read_text()
     storage = (root / "supabase/migrations/20260723155629_jrbia_storage.sql").read_text()
+    private_helpers = (
+        root / "supabase/migrations/20260723155833_jrbia_private_rls_helpers.sql"
+    ).read_text()
 
     for table in (
         "organizations",
@@ -149,7 +152,7 @@ def test_supabase_migrations_are_rls_first_and_storage_private():
     ):
         assert f"alter table public.{table} enable row level security" in core
         assert f"revoke all on public.{table} from anon" in core
-    assert "created_by = private.jwt_subject()" in core
+    assert "created_by = private.jwt_subject()" in private_helpers
     assert "'jrbia-brand-assets'" in storage
     assert "false," in storage
     assert "storage.foldername(name)" in storage
