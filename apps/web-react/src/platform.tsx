@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type FormEvent,
   type ReactNode,
 } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router-dom";
@@ -88,6 +89,25 @@ export function usePlatform(): PlatformContextValue {
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const auth = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string>();
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(undefined);
+    setIsSubmitting(true);
+    try {
+      await auth.signInWithPassword(email.trim(), password);
+      setPassword("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Connexion impossible.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   if (auth.status === "loading") return <main className="centered">Chargement de l’identité…</main>;
   if (auth.status === "locked") {
     return (
@@ -100,9 +120,50 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
   if (auth.status === "signed_out") {
     return (
-      <main className="centered panel">
-        <h1>Connexion requise</h1>
-        <p>Connectez-vous avec Supabase Auth pour accéder au cockpit.</p>
+      <main className="auth-layout">
+        <section className="auth-intro">
+          <p className="eyebrow">Cockpit sécurisé</p>
+          <h1>Bienvenue dans JRbIA</h1>
+          <p>L’intelligence artificielle utile aux métiers, dans un espace isolé par organisation.</p>
+          <ul className="auth-benefits">
+            <li>🔐 Session gérée par Supabase Auth</li>
+            <li>🛡️ Données protégées par RLS</li>
+            <li>🏢 Accès limité à vos organisations</li>
+          </ul>
+        </section>
+        <form className="panel auth-card" onSubmit={submit}>
+          <div>
+            <p className="eyebrow">Accès professionnel</p>
+            <h2>Se connecter</h2>
+            <p>Utilisez le compte préalablement autorisé par JRbIA.</p>
+          </div>
+          <label>
+            Adresse e-mail
+            <input
+              autoComplete="email"
+              inputMode="email"
+              required
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </label>
+          <label>
+            Mot de passe
+            <input
+              autoComplete="current-password"
+              required
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <button className="button" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Connexion…" : "Accéder au cockpit"}
+          </button>
+          <p className="form-note">L’inscription libre est désactivée. Contactez l’administrateur JRbIA pour obtenir un accès.</p>
+        </form>
       </main>
     );
   }
@@ -140,8 +201,19 @@ export function ToolGate({ toolId, children }: { toolId: string; children: React
 }
 
 export function AdminShell({ children }: { children: ReactNode }) {
+  const auth = useAuth();
   const { memberships, selectedOrganizationId, selectOrganization, catalog } = usePlatform();
   const location = useLocation();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  async function signOut() {
+    setIsSigningOut(true);
+    try {
+      await auth.signOut();
+    } finally {
+      setIsSigningOut(false);
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -159,6 +231,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </option>
           ))}
         </select>
+        <button className="topbar-action" disabled={isSigningOut} onClick={signOut} type="button">
+          {isSigningOut ? "Déconnexion…" : "Se déconnecter"}
+        </button>
       </header>
       <aside className="sidebar">
         <Link className={location.pathname === "/admin/tools" ? "active" : ""} to="/admin/tools">

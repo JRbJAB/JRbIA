@@ -6,6 +6,8 @@ interface AuthState {
   user: User | null;
   reason?: string;
   getToken: () => Promise<string>;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -19,8 +21,10 @@ function createSupabaseClient() {
   });
 }
 
+const supabaseClient = createSupabaseClient();
+
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
-  const client = useMemo(createSupabaseClient, []);
+  const client = supabaseClient;
   const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<AuthState["status"]>("loading");
   const [reason, setReason] = useState<string>();
@@ -63,8 +67,18 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         if (!session?.access_token) throw new Error("Aucune session Supabase authentifiée.");
         return session.access_token;
       },
+      signInWithPassword: async (email, password) => {
+        if (!client) throw new Error("Configuration Supabase absente.");
+        const { error } = await client.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      },
+      signOut: async () => {
+        if (!client) throw new Error("Configuration Supabase absente.");
+        const { error } = await client.auth.signOut({ scope: "global" });
+        if (error) throw error;
+      },
     }),
-    [reason, session, status],
+    [client, reason, session, status],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
