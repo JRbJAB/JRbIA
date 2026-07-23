@@ -129,8 +129,8 @@ def test_supabase_is_the_default_backend():
 
 @pytest.mark.asyncio
 async def test_principal_keeps_token_out_of_serialized_payload(services):
-    principal = await services.platform.principal("user-a", access_token="firebase-jwt")
-    assert principal.access_token == "firebase-jwt"
+    principal = await services.platform.principal("user-a", access_token="supabase-jwt")
+    assert principal.access_token == "supabase-jwt"
     assert "access_token" not in principal.model_dump()
 
 
@@ -138,8 +138,8 @@ def test_supabase_migrations_are_rls_first_and_storage_private():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[3]
-    core = (root / "supabase/migrations/20260723000100_jrbia_platform_core.sql").read_text()
-    storage = (root / "supabase/migrations/20260723000200_jrbia_storage.sql").read_text()
+    core = (root / "supabase/migrations/20260723155545_jrbia_platform_core.sql").read_text()
+    storage = (root / "supabase/migrations/20260723155629_jrbia_storage.sql").read_text()
 
     for table in (
         "organizations",
@@ -149,7 +149,7 @@ def test_supabase_migrations_are_rls_first_and_storage_private():
     ):
         assert f"alter table public.{table} enable row level security" in core
         assert f"revoke all on public.{table} from anon" in core
-    assert "created_by = public.jwt_subject()" in core
+    assert "created_by = private.jwt_subject()" in core
     assert "'jrbia-brand-assets'" in storage
     assert "false," in storage
     assert "storage.foldername(name)" in storage
