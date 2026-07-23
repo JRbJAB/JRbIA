@@ -15,10 +15,10 @@ class SupabaseConfigurationError(RuntimeError):
 
 
 class SupabaseDataApi:
-    """RLS-aware Supabase Data API client using the verified caller Firebase JWT.
+    """RLS-aware Supabase Data API client using the native Supabase JWT.
 
     The publishable key identifies the JRbIA project. Authorization remains the
-    caller JWT trusted through Supabase Third-Party Auth, so database RLS is
+    native caller JWT issued by Supabase Auth, so database RLS is
     evaluated for every request. No service/secret key is used here.
     """
 
