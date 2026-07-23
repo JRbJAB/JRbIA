@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+import httpx
+
 from .config import Settings
 
 
@@ -20,47 +22,37 @@ class TokenVerifier(Protocol):
     async def verify(self, token: str) -> Identity: ...
 
 
-class FirebaseTokenVerifier:
-    """Server-side verifier. There is no frontend authorization fallback."""
+class SupabaseTokenVerifier:
+    """Validate the caller's native Supabase access token with Auth."""
 
     def __init__(self, settings: Settings) -> None:
-        self._settings = settings
-        self._initialized = False
-
-    def _ensure_initialized(self) -> None:
-        if self._initialized:
-            return
-        try:
-            import firebase_admin
-        except ImportError as exc:  # pragma: no cover - deployment dependency
-            raise AuthenticationError("firebase-admin is not installed") from exc
-
-        try:
-            firebase_admin.get_app()
-        except ValueError:
-            options = {"projectId": self._settings.firebase_project_id} if self._settings.firebase_project_id else None
-            firebase_admin.initialize_app(options=options)
-        self._initialized = True
+        self._base_url = str(settings.supabase_url).rstrip("/") if settings.supabase_url else None
+        self._publishable_key = settings.supabase_publishable_key
+        self._timeout = settings.supabase_timeout_seconds
 
     async def verify(self, token: str) -> Identity:
         if not token:
             raise AuthenticationError("Missing bearer token")
-        self._ensure_initialized()
-        from firebase_admin import auth
+        if not self._base_url or not self._publishable_key:
+            raise AuthenticationError("Supabase Auth is not configured")
 
+        headers = {
+            "apikey": self._publishable_key,
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
         try:
-            decoded = auth.verify_id_token(token, check_revoked=self._settings.firebase_check_revoked)
-        except Exception as exc:  # Firebase exposes several provider exceptions
-            raise AuthenticationError("Invalid Firebase ID token") from exc
+            async with httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout) as client:
+                response = await client.get("/auth/v1/user", headers=headers)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise AuthenticationError("Invalid or expired Supabase access token") from exc
 
-        user_id = decoded.get("uid") or decoded.get("sub")
+        user = response.json()
+        user_id = user.get("id")
         if not user_id:
-            raise AuthenticationError("Token has no user identifier")
-        # Supabase Third-Party Auth expects the Firebase token to carry the
-        # authenticated Postgres role. Fail closed before querying the Data API.
-        if decoded.get("role") != "authenticated":
-            raise AuthenticationError("Firebase token is missing role=authenticated for Supabase")
-        return Identity(user_id=str(user_id), email=decoded.get("email"))
+            raise AuthenticationError("Supabase Auth response has no user identifier")
+        return Identity(user_id=str(user_id), email=user.get("email"))
 
 
 class StaticTokenVerifier:
