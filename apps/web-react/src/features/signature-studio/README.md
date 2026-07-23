@@ -1,31 +1,15 @@
-# Frontend scaffold — JRbIA Signature Studio
+# Frontend — JRbIA Signature Studio
 
-Ce dossier réserve le module frontend dans le Web Admin Client commun.
+La première implémentation native est regroupée temporairement dans `src/signature-studio.tsx` afin de valider le shell, les routes protégées et le contrat API avant découpage fin.
 
-## Composants prévus
+## Déjà câblé dans DEP-23
 
-```text
-SignatureStudioRoutes
-SignatureListPage
-SignatureEditorPage
-SignaturePreview
-BrandProfilePicker
-PersonProfileForm
-TemplatePicker
-ApprovalPanel
-ExportPanel
-BulkGenerationPage
-AuditTimeline
-```
+- route catalogue ;
+- gate organisation ;
+- gate entitlement `signature-studio` ;
+- bootstrap du plan, des quotas et des six profils de marque ;
+- formulaire d’aperçu ;
+- rendu dans un iframe **sandboxé uniquement pour la prévisualisation HTML générée** ;
+- aucune iframe du prototype autonome.
 
-## Contraintes
-
-- Aucun iframe vers le générateur autonome.
-- Aucun secret ou décision d'autorisation dans le frontend.
-- Le HTML de preview est rendu dans une surface isolée et provient du backend assaini.
-- Les routes sont protégées par l'entitlement `signature-studio` et les capacités.
-- Les deep links sont validés et n'accordent aucun droit.
-
-## Source fonctionnelle
-
-Le fichier autonome v1.1 sert uniquement de référence de comportement et de fallback hors ligne.
+Le découpage par pages, hooks, composants et tests viendra après validation du scaffold.

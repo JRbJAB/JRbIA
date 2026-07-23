@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jrbia-api"
+version = "0.1.0"
+description = "JRbIA Web Admin Client API scaffold"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.128,<1",
+  "uvicorn[standard]>=0.35,<1",
+  "pydantic>=2.13,<3",
+  "pydantic-settings>=2.10,<3",
+  "google-cloud-firestore>=2.21,<3",
+  "bleach>=6.2,<7",
+  "tinycss2>=1.4,<2",
+  "email-validator>=2.2,<3",
+  "httpx>=0.28,<1"
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2"
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
